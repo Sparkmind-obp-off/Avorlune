@@ -1,0 +1,6 @@
+# Salin ke .dev.vars untuk pengembangan lokal. Jangan commit .dev.vars.
+APP_ENV=development
+LINK_SIGNING_SECRET=replace-with-64-random-hex-chars
+ADMIN_EMAIL=admin@example.com
+# Buat dengan: node scripts/hash-password.mjs 'password-anda'
+ADMIN_PASSWORD_HASH=pbkdf2$100000$replace$replace
