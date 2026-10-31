@@ -25,6 +25,21 @@
 **Decision:** every deliverable receives internal review; customer approval is recorded.  
 **Reason:** protect quality, accuracy, brand safety and customer trust.
 
+### ADR-006: Pages Functions as the API host (implemented 2026-10-31)
+**Decision:** the Hono API runs as Cloudflare Pages Functions (`functions/api/[[path]].ts`) in the same Pages project as the React SPA.
+**Reason:** one deploy unit, same-origin cookies (no CORS), simplest BYOK deployment.
+**Consequence:** preview deployments share the production D1 binding until a separate preview database is configured — do not use preview URLs with real customer data.
+
+### ADR-007: Customer access via signed, expiring, revocable project links (implemented 2026-10-31)
+**Decision:** customers access their project with an HMAC-signed token (30-day expiry) bound to project id + `access_token_version`; admins can rotate to revoke all prior links. No customer accounts yet.
+**Reason:** satisfies docs/07 ("verified, expiring, high-entropy project token") without selecting an auth provider.
+**Consequence:** anyone holding a valid link can act as the customer; links are moved out of the URL into sessionStorage and pages are `noindex`/`no-referrer`.
+
+### ADR-008: R2 asset delivery deferred (2026-10-31)
+**Decision:** no R2 bucket yet; previews/finals are delivered through an external private channel while the portal records feedback and approval.
+**Reason:** enabling R2 on the Cloudflare account requires owner approval (billing method on file) per the Rp0/minimal-spend principle.
+**Consequence:** docs/11 "P0 — Delivery" asset items remain open and are a launch blocker.
+
 ## Open assumptions
 - First vertical/customer segment is not yet validated.
 - Pricing and package structure are not yet validated.
