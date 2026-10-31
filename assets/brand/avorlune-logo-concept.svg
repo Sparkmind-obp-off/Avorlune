@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">AVORLUNE — Logo Concept</title>
+  <desc id="desc">A restrained editorial wordmark concept in warm ivory and muted lavender, with a minimal orbital arc symbol.</desc>
+  <rect width="1200" height="420" fill="#111116"/>
+  <g transform="translate(112 90)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M115 15 C34 37 6 118 37 191 C68 263 162 279 220 222" stroke="#D9D3E7" stroke-width="3.5"/>
+    <path d="M31 194 C84 222 155 213 207 165" stroke="#A99BBE" stroke-width="2" opacity=".9"/>
+    <circle cx="219" cy="221" r="6" fill="#D9D3E7" stroke="none"/>
+    <path d="M116 71 L166 197 L67 197 Z" stroke="#F1EEE8" stroke-width="4"/>
+    <path d="M93 151 H139" stroke="#A99BBE" stroke-width="3"/>
+  </g>
+  <text x="400" y="208" fill="#F1EEE8" font-family="Georgia, 'Times New Roman', serif" font-size="86" letter-spacing="12">AVORLUNE</text>
+  <text x="407" y="267" fill="#B9B2C2" font-family="Arial, Helvetica, sans-serif" font-size="18" letter-spacing="7">AI CREATIVE PRODUCTION</text>
+  <path d="M405 298 H1065" stroke="#6E6677" stroke-width="1" opacity=".7"/>
+  <text x="405" y="337" fill="#8F8996" font-family="Arial, Helvetica, sans-serif" font-size="12" letter-spacing="3">CONCEPT 01 · NOT FINAL · NOT TRADEMARK CLEARED</text>
+</svg>
