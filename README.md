@@ -12,11 +12,32 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 
 > Brand status: working name. Domain, social handles, and trademark clearance remain subject to direct verification. No legal clearance is claimed.
 
-## URLs
+## Current URLs
 - **Production (Cloudflare Pages, BYOK):** https://avorlune.pages.dev
-- **Admin studio:** https://avorlune.pages.dev/admin
-- **API base:** https://avorlune.pages.dev/api/v1
+- **Current admin path:** https://avorlune.pages.dev/admin
+- **Current API base:** https://avorlune.pages.dev/api/v1
 - **GitHub:** https://github.com/Sparkmind-obp-off/Avorlune
+
+## Target frontend and authentication architecture
+
+The approved target is **exactly two frontend applications**, in one repository:
+1. **Customer frontend** — Clerk authentication for customers only.
+2. **Admin frontend** — separate Cloudflare Pages deployment with first-party AVORLUNE admin authentication. No Clerk, no public registration, and no admin login link/menu on the customer frontend.
+
+Both frontends will use one shared backend API, one production D1 database, and (after owner approval) one private R2 bucket. The API is a backend service, not a third frontend.
+
+Proposed future URLs (not yet configured):
+- Customer: `avorlune.com` (current fallback: `avorlune.pages.dev`)
+- Admin: `admin.avorlune.com` (temporary Pages fallback: `avorlune-admin.pages.dev`)
+- API: `api.avorlune.com` (only after the shared Worker API is deployed and verified)
+
+Architecture and implementation documents:
+- `docs/47-two-frontend-authentication-architecture.md`
+- `docs/48-admin-authentication-and-security-spec.md`
+- `docs/49-two-pages-deployments-and-shared-api-runbook.md`
+- `docs/50-customer-auth-migration-and-acceptance-plan.md`
+
+**Important:** This is the approved target architecture, not a claim that the two Pages projects, Clerk customer auth, or standalone Worker API have already been implemented. Current production remains the single Pages deployment described below until a tested migration is completed.
 
 ## Implementation status (verified 2026-11-01)
 
@@ -36,6 +57,9 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 | Tests | 88 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
 
 ### Not yet implemented / blocked
+- **Two separate frontend deployments and shared Worker API** — approved target architecture; current admin still lives under `/admin` in the customer Pages deployment.
+- **Clerk customer authentication** — designed in docs 47 and 50; not yet integrated. Existing signed project-link flow must remain compatible during migration.
+- **Separate admin frontend deployment** — designed; existing first-party single-admin auth is the baseline and must remain independent of Clerk.
 - **R2 private delivery live** — needs owner approval (R2 billing). Interim manual private delivery: `docs/41`.
 - **Dedicated preview D1** — account D1 limit reached; preview runs without a DB (`docs/40`).
 - **Legal approval** — Privacy/Terms are drafts pending owner + Indonesian counsel review.
@@ -45,12 +69,12 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 - Multi-staff accounts, AI provider adapters, research/Apify module, portfolio, validated pricing, brand clearance.
 
 ### Runbooks
-`docs/40` environment isolation · `docs/41` private delivery & approval · `docs/42` backup & restore · `docs/43` secrets & incidents · `docs/44` manual operations & staff access · `docs/46` Duitku payment integration.
+`docs/40` environment isolation · `docs/41` private delivery & approval · `docs/42` backup & restore · `docs/43` secrets & incidents · `docs/44` manual operations & staff access · `docs/46` Duitku payment integration · `docs/47–50` two-frontend, customer/admin auth, deployment and migration.
 
-## API (summary)
-Public: `GET /health`, `GET /services`, `GET /portfolio`, `POST /inquiries`
-Customer (header `x-project-token`): `GET /projects/:reference`, `GET /projects/:reference/assets/:assetId/download`, `POST /projects/:reference/quote/decision`, `POST /projects/:reference/feedback`, `POST /projects/:reference/approval` (body `{ assetId }`), `POST /projects/:reference/payments/checkout`, `POST /projects/:reference/payments/:orderId/refresh`
-Payment gateway: `POST /payments/duitku/callback` (form-urlencoded, Duitku signature)
+## API (current implementation summary)
+Public: `GET /health`, `GET /services`, `GET /portfolio`, `POST /inquiries`  
+Customer (header `x-project-token`): `GET /projects/:reference`, `GET /projects/:reference/assets/:assetId/download`, `POST /projects/:reference/quote/decision`, `POST /projects/:reference/feedback`, `POST /projects/:reference/approval` (body `{ assetId }`), `POST /projects/:reference/payments/checkout`, `POST /projects/:reference/payments/:orderId/refresh`  
+Payment gateway: `POST /payments/duitku/callback` (form-urlencoded, Duitku signature)  
 Admin (session cookie + `x-csrf-token`): `POST /admin/auth/login`, `GET /admin/auth/me`, `POST /admin/auth/logout`, `POST /admin/auth/logout-all`, `POST /admin/projects/:id/assets?kind=`, `GET /admin/projects/:id/assets/:assetId/download`, `POST /admin/projects/:id/assets/:assetId/revoke`, `POST /admin/projects/:id/costs`, `GET /admin/projects`, `GET /admin/projects/:id`, `PATCH /admin/projects/:id/status`, `POST /admin/projects/:id/quotes`, `POST /admin/projects/:id/payments/confirm`, `POST /admin/projects/:id/events`, `POST /admin/projects/:id/access-link[?revokePrevious=true]`, `GET /admin/projects/:id/export`, `GET /admin/payments/duitku/status`, `GET /admin/projects/:id/payment-orders`, `POST /admin/projects/:id/payment-orders/:orderId/reconcile`
 
 Responses: `{ data, requestId }` or `{ error: { code, message, details? }, requestId }`.
@@ -59,7 +83,7 @@ Responses: `{ data, requestId }` or `{ error: { code, message, details? }, reque
 - **Cloudflare D1** `avorlune-production` (stamped `app_meta.environment=production`) — tables: `users`, `projects`, `quotes`, `payments`, `assets` (schema only), `feedback`, `project_events`, plus operational `sessions`, `rate_limits`, `idempotency_keys`, `app_meta`, `project_costs`. Migrations: `0001_initial_schema.sql`, `0002_gap_closure.sql`, `0003_payments_duitku.sql` (`payment_orders`, `payment_callbacks`) — all additive.
 - Money is stored as integer IDR (`amount_minor`). Audit metadata never contains contact details, brief text or tokens.
 
-## Admin usage guide
+## Admin usage guide (current deployment only)
 1. Sign in at `/admin`.
 2. Open a new inquiry → move to **Kualifikasi**.
 3. Create and **send** a quote (deliverables, revisions, ETA, usage notes) → move to **Penawaran dikirim**.
@@ -68,7 +92,7 @@ Responses: `{ data, requestId }` or `{ error: { code, message, details? }, reque
 6. Customer sends feedback (→ **Revisi**) or approves (→ **Disetujui**) → mark **Terkirim** after final files are actually delivered.
 7. Use **Cabut & buat baru** to revoke a leaked link.
 
-## Repository layout
+## Repository layout (current)
 ```
 src/            React + Vite + TS frontend (pages, admin studio, styles)
 server/         Hono API: app, routes (public/customer/admin), domain, middleware, lib
@@ -90,7 +114,7 @@ npm run build && npx wrangler pages dev dist --ip 0.0.0.0 --port 3000
 npm run check                              # typecheck + lint + tests
 ```
 
-## Deployment (BYOK Cloudflare Pages)
+## Deployment (current BYOK Cloudflare Pages)
 - Pages project: `avorlune` (production branch `main`). D1 binding `DB` → `avorlune-production`.
 - Secrets (set with `wrangler pages secret put … --project-name avorlune`): `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `LINK_SIGNING_SECRET`. Rotating `LINK_SIGNING_SECRET` invalidates all customer links.
 - Deploy: `npm run db:bookmark:prod && npm run db:migrate:prod && npm run deploy` (deploy runs `npm run check` first).
@@ -103,9 +127,6 @@ npm run check                              # typecheck + lint + tests
 3. Never expose provider keys or private production assets to the browser.
 4. Keep provider integrations behind adapters; never assume a tool has a usable API or commercial-use rights.
 5. Build the smallest useful product and measure paid demand, turnaround time, quality and repeat orders.
-
-## Repository map (docs)
-`docs/01` business & brand · `02` PRD · `03` metrics · `04` UX · `05` architecture · `06` data model · `07` API contract · `08` AI workflow · `09` security · `10` roadmap · `11` backlog · `12` decisions & risks · `13` handoff · `14` launch checklist · `15` test strategy · `16` operations · `MASTER-SYSTEM-PROMPT.md`
 
 ## Status
 Gap-closure work (docs/38) applied 2026-11-01: G0.2 and G0.3 closed, G0.1 code-complete but not live. **Not launch-ready for unrestricted production.** See `docs/37` §10 and `docs/39`.
