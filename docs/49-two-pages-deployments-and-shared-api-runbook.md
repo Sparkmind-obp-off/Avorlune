@@ -79,7 +79,7 @@ CORS should allow only the exact deployed customer and admin origins. Cookie-aut
 
 ## 6. R2
 
-Initial target is one private bucket. Provisioning may require billing and therefore requires explicit owner approval.
+One private production bucket is a REQUIRED dependency for customer upload, private preview, final-asset approval and customer delivery. The target is one private bucket named `avorlune-assets`, bound as `DELIVERY_BUCKET`. It is not active yet. Provisioning may require billing and therefore requires explicit owner approval. Until the bucket is provisioned and tested, private delivery and final-asset approval remain blocked/fail-closed; use the manual fallback in docs/41 and docs/44.
 
 - No public bucket domain.
 - Random opaque object keys; do not use customer names/emails in keys.
@@ -88,6 +88,7 @@ Initial target is one private bucket. Provisioning may require billing and there
 - Short-lived presigned URLs only when required; prefer API-mediated downloads where current code already uses them.
 - Audit upload/download/revoke.
 - Do not activate R2 billing or create a bucket without approval.
+- Activation checklist, lifecycle, security, quota and pricing: `docs/51-cloudflare-r2-production-storage-spec.md`.
 
 Public portfolio images remain in frontend static assets until a separate public bucket is justified.
 
@@ -117,7 +118,7 @@ Public portfolio images remain in frontend static assets until a separate public
 - CORS, cookies, CSRF, and preview isolation are tested.
 - Existing inquiry, customer portal, quote, payment, approval, and manual operations flows remain intact.
 - Duitku checkout remains disabled until LIVE auth verification is complete.
-- R2 remains unprovisioned until owner approves billing.
+- R2 is required before private delivery can go live; it remains unprovisioned until owner approves billing. Follow docs/51.
 
 ## 9. Current-state warning
 
