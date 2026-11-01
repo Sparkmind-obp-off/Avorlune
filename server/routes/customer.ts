@@ -8,6 +8,8 @@ import { getProjectByReference, latestQuote, transition, GUARD_SUFFIX, type Proj
 import { CUSTOMER_VISIBLE_STATUSES, assertValidFinalAsset, getProjectAsset, hasValidFinalAsset, publicAsset, streamAsset, type AssetRow } from '../domain/assets'
 import { deliveryEnabled } from '../domain/assets'
 import { z } from 'zod'
+import { checkoutEnabled, getDuitkuConfig } from '../lib/duitku'
+import { publicOrder, reconcileOrder, startCheckout, type PaymentOrderRow } from '../domain/payments'
 import { eventStmt } from '../domain/events'
 
 export const customerRoutes = new Hono<AppBindings>()
@@ -65,6 +67,7 @@ customerRoutes.get('/projects/:reference', async (c) => {
     timeline: (events.results ?? []).map((e) => ({ status: e.to_status, label: STATUS_LABELS[e.to_status as keyof typeof STATUS_LABELS] ?? e.to_status, at: e.created_at })),
     feedback: fb.results ?? [],
     deliveryEnabled: deliveryEnabled(c.env),
+    payment: await customerPayment(c.env, db, p),
     assets: await customerAssets(deliveryEnabled(c.env) ? db : null, p),
     approvedAssetId: p.approved_asset_id ?? null,
     actions: {
@@ -75,6 +78,19 @@ customerRoutes.get('/projects/:reference', async (c) => {
     },
   })
 })
+
+async function customerPayment(env: AppBindings['Bindings'], db: D1Database, p: ProjectRow) {
+  const orders = await db.prepare('SELECT * FROM payment_orders WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 5').bind(p.id).all<PaymentOrderRow>()
+  const accepted = await db.prepare(`SELECT COUNT(*) n FROM quotes WHERE project_id = ?1 AND status = 'accepted'`).bind(p.id).first<{ n: number }>()
+  const list = orders.results ?? []
+  const paid = list.some((o) => o.status === 'paid')
+  return {
+    onlineEnabled: checkoutEnabled(env),
+    canPay: checkoutEnabled(env) && !paid && (accepted?.n ?? 0) > 0 && ['quoted', 'awaiting_payment'].includes(p.status),
+    needsEmail: p.contact_method !== 'email',
+    orders: list.map(publicOrder),
+  }
+}
 
 async function customerAssets(db: D1Database | null, p: ProjectRow) {
   if (!db || !(CUSTOMER_VISIBLE_STATUSES as readonly string[]).includes(p.status)) return []
@@ -150,4 +166,31 @@ customerRoutes.post('/projects/:reference/approval', async (c) => {
     db.prepare(`UPDATE projects SET approved_asset_id = ?1 WHERE id = ?2 AND status = 'approved' AND updated_at = ?3`).bind(a.id, p.id, stamp),
   ])
   return ok(c, { status: 'approved', assetId: a.id })
+})
+
+const checkoutSchema = z.object({ email: z.string().trim().toLowerCase().email().max(160).optional() })
+
+/** Start (or reuse) a Duitku POP checkout. Amount is taken from the accepted quote on the server — never from the client. */
+customerRoutes.post('/projects/:reference/payments/checkout', async (c) => {
+  const p = await authorizeCustomer(c)
+  await enforceRateLimit(c.env.DB, 'checkout', p.id, 10, 3600)
+  if (!checkoutEnabled(c.env)) throw new ApiError(409, 'PAYMENTS_DISABLED', 'Pembayaran online belum aktif. Tim kami akan mengirim instruksi pembayaran manual.')
+  const { email } = await parseJson(c, checkoutSchema)
+  const contactEmail = p.contact_method === 'email' ? p.customer_contact : email
+  if (!contactEmail) throw new ApiError(422, 'EMAIL_REQUIRED', 'Email wajib untuk tanda terima pembayaran')
+  const r = await startCheckout(c.env, c.env.DB, p, new URL(c.req.url).origin, contactEmail)
+  return ok(c, { order: publicOrder(r.order), reference: r.reference, popScript: r.cfg.endpoints.popScript, paymentUrl: r.order.payment_url, reused: r.reused }, r.reused ? 200 : 201)
+})
+
+/** Server-to-server status check; the browser's POP result is only a hint to call this. */
+customerRoutes.post('/projects/:reference/payments/:orderId/refresh', async (c) => {
+  const p = await authorizeCustomer(c)
+  await enforceRateLimit(c.env.DB, 'pay-refresh', p.id, 30, 600)
+  if (!getDuitkuConfig(c.env)) throw new ApiError(409, 'PAYMENTS_DISABLED', 'Pembayaran online belum aktif')
+  const id = c.req.param('orderId')
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan')
+  const o = await c.env.DB.prepare('SELECT * FROM payment_orders WHERE id = ?1 AND project_id = ?2').bind(id, p.id).first<PaymentOrderRow>()
+  if (!o) throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan')
+  const r = await reconcileOrder(c.env, c.env.DB, o)
+  return ok(c, { order: publicOrder(r.order), outcome: r.outcome })
 })

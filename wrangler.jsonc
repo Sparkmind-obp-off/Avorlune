@@ -14,7 +14,9 @@
   "env": {
     // Production branch (main) only.
     "production": {
-      "vars": { "APP_ENV": "production" },
+      // Duitku: merchant code + API key are Cloudflare secrets (DUITKU_MERCHANT_CODE, DUITKU_API_KEY), never here.
+      // Online checkout stays OFF until credentials are verified by /admin/payments/duitku/status and the owner approves.
+      "vars": { "APP_ENV": "production", "DUITKU_ENV": "production", "DUITKU_CHECKOUT_ENABLED": "false" },
       "d1_databases": [
         { "binding": "DB", "database_name": "avorlune-production", "database_id": "52632cba-6b60-44e9-ae3b-3bc82fdbeb43" }
       ]

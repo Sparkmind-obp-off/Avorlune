@@ -8,7 +8,9 @@ export const ADMIN_EMAIL = 'producer@example.test'
 export const ADMIN_PASSWORD = 'correct-horse-battery-staple'
 let cachedHash: string | null = null
 
-export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: string | null; noDb?: boolean } = {}) {
+export const DUITKU_TEST = { merchantCode: 'DTEST1', apiKey: 'test-duitku-api-key-0123456789abcdef' }
+
+export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: string | null; noDb?: boolean; duitku?: boolean; checkout?: boolean } = {}) {
   cachedHash ??= await hashPassword(ADMIN_PASSWORD, 10_000)
   const { d1, raw } = createTestD1()
   const marker = opts.marker === undefined ? 'test' : opts.marker
@@ -21,6 +23,7 @@ export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: 
     ADMIN_EMAIL,
     ADMIN_PASSWORD_HASH: cachedHash,
     ...(opts.assets ? { DELIVERY_BUCKET: mem.store } : {}),
+    ...(opts.duitku ? { DUITKU_ENV: 'sandbox', DUITKU_MERCHANT_CODE: DUITKU_TEST.merchantCode, DUITKU_API_KEY: DUITKU_TEST.apiKey, DUITKU_CHECKOUT_ENABLED: opts.checkout === false ? 'false' : 'true' } : {}),
   }
   const app = createApp()
   let ipCounter = 0
@@ -46,7 +49,11 @@ export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: 
     )
     return { status: res.status, body: (await res.json().catch(() => null)) as any } // eslint-disable-line @typescript-eslint/no-explicit-any
   }
-  return { app, env, raw, call, upload, objects: mem.objects }
+  const form = async (path: string, fields: Record<string, string>, ip?: string) => {
+    const res = await app.request(`https://avorlune.test/api/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': ip ?? nextIp() }, body: new URLSearchParams(fields).toString() }, env)
+    return { status: res.status, text: await res.text() }
+  }
+  return { app, env, raw, call, upload, form, objects: mem.objects }
 }
 
 export function validInquiry(overrides: Record<string, unknown> = {}) {

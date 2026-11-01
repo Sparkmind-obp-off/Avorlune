@@ -50,13 +50,18 @@
 **Reason:** close G0.2. Cloudflare Pages already injects a static-asset Fetcher named `ASSETS`, which collided with the first binding name during local testing.
 **Consequence:** without R2, portal approval is impossible by design; the pilot uses the manual procedure in docs/41.
 
+### ADR-011: Duitku POP with a server-side settlement rule and a checkout switch (2026-11-01)
+**Decision:** online payment uses Duitku POP JS. An order becomes paid only after a correctly signed callback with matching amount **and** a server-to-server `transactionStatus` = 00 with the same amount; settlement is idempotent. Customer checkout requires `DUITKU_CHECKOUT_ENABLED="true"`; it ships `false`.
+**Reason:** never trust browser status; credentials could not be verified against Duitku production; live transactions need owner authorisation.
+**Consequence:** the integration is deployed but dormant; manual payment confirmation (docs/44) remains the operating path until credentials verify and the owner enables checkout.
+
 ## Open assumptions
 - First vertical/customer segment is not yet validated.
 - Pricing and package structure are not yet validated.
 - Domain and social handles are not yet verified.
 - Trademark clearance is not complete.
 - AI provider API access and commercial terms are not confirmed.
-- Payment gateway choice and credentials are not confirmed.
+- Payment gateway: Duitku selected (ADR-011); production credentials not yet accepted by Duitku.
 - Notification provider is not selected.
 
 ## Risk register

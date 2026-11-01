@@ -9,6 +9,8 @@ import { createSession, destroyAllSessions, destroySession, loadSession, require
 import { MAX_ASSET_BYTES, UPLOAD_KINDS, UPLOAD_STATUSES, getProjectAsset, publicAsset, storeAsset, streamAsset, type AssetRow, type UploadKind } from '../domain/assets'
 import { deliveryEnabled } from '../domain/assets'
 import { logEvent } from '../lib/log'
+import { checkoutEnabled, getDuitkuConfig, probeCredentials } from '../lib/duitku'
+import { publicOrder, reconcileOrder, type PaymentOrderRow } from '../domain/payments'
 import { assertTransitionAllowed, requireProject, transition } from '../domain/projects'
 import { eventStmt } from '../domain/events'
 
@@ -294,6 +296,44 @@ admin.post('/projects/:id/costs', async (c) => {
     eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'cost_recorded', metadata: { costId: id, kind: input.kind, amountMinor: input.amountMinor, minutes: input.minutes } }),
   ])
   return ok(c, { id }, 201)
+})
+
+// ---------- Duitku POP ----------
+/** Read-only credential/config check (lists active payment methods; creates no transaction). Never returns secrets. */
+admin.get('/payments/duitku/status', async (c) => {
+  await enforceRateLimit(c.env.DB, 'duitku-probe', c.get('user')!.id, 20, 3600)
+  const cfg = getDuitkuConfig(c.env)
+  if (!cfg) return ok(c, { configured: false, checkoutEnabled: false })
+  const probe = await probeCredentials(cfg)
+  return ok(c, {
+    configured: true,
+    environment: cfg.env,
+    merchantCodeMasked: cfg.merchantCode.slice(0, 2) + '***' + cfg.merchantCode.slice(-1),
+    checkoutEnabled: checkoutEnabled(c.env),
+    credentialsVerified: probe.ok,
+    probeError: probe.ok ? null : probe.code,
+    methods: probe.ok ? probe.methods : [],
+    callbackUrl: `${new URL(c.req.url).origin}/api/v1/payments/duitku/callback`,
+  })
+})
+
+admin.get('/projects/:id/payment-orders', async (c) => {
+  const p = await requireProject(c.env.DB, c.req.param('id'))
+  const rows = await c.env.DB.prepare('SELECT * FROM payment_orders WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 50').bind(p.id).all<PaymentOrderRow>()
+  const cbs = await c.env.DB.prepare(`SELECT pc.merchant_order_id, pc.signature_valid, pc.result_code, pc.outcome, pc.created_at FROM payment_callbacks pc
+    JOIN payment_orders po ON po.merchant_order_id = pc.merchant_order_id WHERE po.project_id = ?1 ORDER BY pc.created_at DESC LIMIT 50`).bind(p.id).all()
+  return ok(c, { orders: (rows.results ?? []).map((o) => ({ ...publicOrder(o), failureCode: o.failure_code })), callbacks: cbs.results ?? [] })
+})
+
+admin.post('/projects/:id/payment-orders/:orderId/reconcile', async (c) => {
+  const db = c.env.DB
+  const p = await requireProject(db, c.req.param('id'))
+  const id = c.req.param('orderId')
+  const o = /^[0-9a-f-]{36}$/i.test(id) ? await db.prepare('SELECT * FROM payment_orders WHERE id = ?1 AND project_id = ?2').bind(id, p.id).first<PaymentOrderRow>() : null
+  if (!o) throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan')
+  const r = await reconcileOrder(c.env, db, o)
+  await eventStmt(db, { projectId: p.id, actorUserId: c.get('user')!.id, actorType: 'admin', eventType: 'payment_reconciled', metadata: { orderId: o.id, outcome: r.outcome } }).run()
+  return ok(c, { order: publicOrder(r.order), outcome: r.outcome })
 })
 
 adminRoutes.route('/', admin)

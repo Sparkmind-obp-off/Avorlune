@@ -32,28 +32,31 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 | Private delivery (code) | Upload/list/download/revoke behind an R2 binding `DELIVERY_BUCKET` — magic-byte allowlist, 25 MB cap, random keys, header-auth download, `private, no-store`, audit. **Not live: R2 not provisioned (owner approval pending).** |
 | Environment isolation | Preview deployments have no D1/R2 binding; runtime guard requires `app_meta.environment == APP_ENV`; static config test. Verified live (preview API → 503). |
 | Customer view | `/p/:reference#t=<token>` — HMAC-signed, 30-day, revocable; status, timeline, quote decision, consolidated feedback, private file list/download and final approval (when delivery is enabled). |
-| Tests | 72 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
+| Duitku POP payment | Checkout from the customer portal (amount from accepted quote, invoice reuse, 60-min expiry), signed callback + amount check + server-to-server status before settling once → `queued`; admin gateway status probe (masked), order list, reconcile. **Deployed with checkout OFF; credentials rejected by Duitku production — owner verification pending (`docs/46`).** |
+| Tests | 88 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
 
 ### Not yet implemented / blocked
 - **R2 private delivery live** — needs owner approval (R2 billing). Interim manual private delivery: `docs/41`.
 - **Dedicated preview D1** — account D1 limit reached; preview runs without a DB (`docs/40`).
 - **Legal approval** — Privacy/Terms are drafts pending owner + Indonesian counsel review.
-- Notifications and payment gateway — manual procedure `docs/44`.
+- **Duitku live checkout** — credentials not accepted by Duitku production; `DUITKU_CHECKOUT_ENABLED=false` (`docs/46`). Manual payment path `docs/44` remains.
+- Notifications, refund automation — manual procedure `docs/44`.
 - Production restore drill — local synthetic restore verified (`docs/42`).
 - Multi-staff accounts, AI provider adapters, research/Apify module, portfolio, validated pricing, brand clearance.
 
 ### Runbooks
-`docs/40` environment isolation · `docs/41` private delivery & approval · `docs/42` backup & restore · `docs/43` secrets & incidents · `docs/44` manual operations & staff access.
+`docs/40` environment isolation · `docs/41` private delivery & approval · `docs/42` backup & restore · `docs/43` secrets & incidents · `docs/44` manual operations & staff access · `docs/46` Duitku payment integration.
 
 ## API (summary)
 Public: `GET /health`, `GET /services`, `GET /portfolio`, `POST /inquiries`
-Customer (header `x-project-token`): `GET /projects/:reference`, `GET /projects/:reference/assets/:assetId/download`, `POST /projects/:reference/quote/decision`, `POST /projects/:reference/feedback`, `POST /projects/:reference/approval` (body `{ assetId }`)
-Admin (session cookie + `x-csrf-token`): `POST /admin/auth/login`, `GET /admin/auth/me`, `POST /admin/auth/logout`, `POST /admin/auth/logout-all`, `POST /admin/projects/:id/assets?kind=`, `GET /admin/projects/:id/assets/:assetId/download`, `POST /admin/projects/:id/assets/:assetId/revoke`, `POST /admin/projects/:id/costs`, `GET /admin/projects`, `GET /admin/projects/:id`, `PATCH /admin/projects/:id/status`, `POST /admin/projects/:id/quotes`, `POST /admin/projects/:id/payments/confirm`, `POST /admin/projects/:id/events`, `POST /admin/projects/:id/access-link[?revokePrevious=true]`, `GET /admin/projects/:id/export`
+Customer (header `x-project-token`): `GET /projects/:reference`, `GET /projects/:reference/assets/:assetId/download`, `POST /projects/:reference/quote/decision`, `POST /projects/:reference/feedback`, `POST /projects/:reference/approval` (body `{ assetId }`), `POST /projects/:reference/payments/checkout`, `POST /projects/:reference/payments/:orderId/refresh`
+Payment gateway: `POST /payments/duitku/callback` (form-urlencoded, Duitku signature)
+Admin (session cookie + `x-csrf-token`): `POST /admin/auth/login`, `GET /admin/auth/me`, `POST /admin/auth/logout`, `POST /admin/auth/logout-all`, `POST /admin/projects/:id/assets?kind=`, `GET /admin/projects/:id/assets/:assetId/download`, `POST /admin/projects/:id/assets/:assetId/revoke`, `POST /admin/projects/:id/costs`, `GET /admin/projects`, `GET /admin/projects/:id`, `PATCH /admin/projects/:id/status`, `POST /admin/projects/:id/quotes`, `POST /admin/projects/:id/payments/confirm`, `POST /admin/projects/:id/events`, `POST /admin/projects/:id/access-link[?revokePrevious=true]`, `GET /admin/projects/:id/export`, `GET /admin/payments/duitku/status`, `GET /admin/projects/:id/payment-orders`, `POST /admin/projects/:id/payment-orders/:orderId/reconcile`
 
 Responses: `{ data, requestId }` or `{ error: { code, message, details? }, requestId }`.
 
 ## Data architecture
-- **Cloudflare D1** `avorlune-production` (stamped `app_meta.environment=production`) — tables: `users`, `projects`, `quotes`, `payments`, `assets` (schema only), `feedback`, `project_events`, plus operational `sessions`, `rate_limits`, `idempotency_keys`, `app_meta`, `project_costs`. Migrations: `0001_initial_schema.sql`, `0002_gap_closure.sql` (additive).
+- **Cloudflare D1** `avorlune-production` (stamped `app_meta.environment=production`) — tables: `users`, `projects`, `quotes`, `payments`, `assets` (schema only), `feedback`, `project_events`, plus operational `sessions`, `rate_limits`, `idempotency_keys`, `app_meta`, `project_costs`. Migrations: `0001_initial_schema.sql`, `0002_gap_closure.sql`, `0003_payments_duitku.sql` (`payment_orders`, `payment_callbacks`) — all additive.
 - Money is stored as integer IDR (`amount_minor`). Audit metadata never contains contact details, brief text or tokens.
 
 ## Admin usage guide

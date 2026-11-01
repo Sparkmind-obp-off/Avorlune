@@ -14,6 +14,11 @@ export interface Env {
   LINK_SIGNING_SECRET?: string
   ADMIN_EMAIL?: string
   ADMIN_PASSWORD_HASH?: string
+  /** Duitku POP (docs/46). Secrets: merchant code + API key. Vars: env + explicit checkout switch. */
+  DUITKU_ENV?: string
+  DUITKU_MERCHANT_CODE?: string
+  DUITKU_API_KEY?: string
+  DUITKU_CHECKOUT_ENABLED?: string
 }
 
 export interface SessionUser {

@@ -7,6 +7,7 @@ import { envGuard } from './middleware/envGuard'
 import { publicRoutes } from './routes/public'
 import { customerRoutes } from './routes/customer'
 import { adminRoutes } from './routes/admin'
+import { paymentRoutes } from './routes/payments'
 
 export function createApp() {
   const app = new Hono<AppBindings>().basePath('/api/v1')
@@ -22,6 +23,7 @@ export function createApp() {
 
   app.route('/', publicRoutes)
   app.route('/', customerRoutes)
+  app.route('/', paymentRoutes)
   app.route('/admin', adminRoutes)
 
   app.notFound((c) => c.json({ error: { code: 'NOT_FOUND', message: 'Endpoint tidak ditemukan' }, requestId: c.get('requestId') }, 404))

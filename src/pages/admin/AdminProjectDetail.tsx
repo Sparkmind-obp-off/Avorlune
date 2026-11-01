@@ -26,7 +26,7 @@ interface Detail {
 
 const EVENT_LABELS: Record<string, string> = {
   inquiry_created: 'Brief masuk', status_changed: 'Status diubah', quote_sent: 'Penawaran dikirim', quote_drafted: 'Draf penawaran',
-  quote_accepted: 'Penawaran disetujui klien', quote_rejected: 'Penawaran ditolak klien', payment_manually_confirmed: 'Pembayaran dikonfirmasi manual',
+  quote_accepted: 'Penawaran disetujui klien', quote_rejected: 'Penawaran ditolak klien', payment_manually_confirmed: 'Pembayaran dikonfirmasi manual', payment_gateway_confirmed: 'Pembayaran Duitku terverifikasi server', payment_reconciled: 'Order Duitku direkonsiliasi', payment_order_created: 'Invoice Duitku dibuat',
   internal_note: 'Catatan internal', access_link_issued: 'Tautan klien dibuat', access_link_rotated: 'Tautan klien dirotasi (lama dicabut)',
   asset_uploaded: 'File diunggah', asset_revoked: 'File ditarik', asset_downloaded: 'File diunduh klien', project_exported: 'Data proyek diekspor', cost_recorded: 'Biaya dicatat',
 }
@@ -132,6 +132,8 @@ export function AdminProjectDetail() {
             onChange={(toStatus, reason, assetId) => run(() => api(`/admin/projects/${id}/status`, { method: 'PATCH', json: { toStatus, reason: reason || undefined, assetId: assetId || undefined } }), `Status → ${STATUS_LABELS[toStatus]}`)} />
 
           <CostPanel d={d} busy={busy} onAdd={(body) => run(() => api(`/admin/projects/${id}/costs`, { method: 'POST', json: body }), 'Biaya dicatat.')} />
+
+          <GatewayPanel projectId={id} busy={busy} onReconcile={(orderId) => run(() => api(`/admin/projects/${id}/payment-orders/${orderId}/reconcile`, { method: 'POST', json: {} }), 'Status order dicek ke Duitku.')} />
 
           <PaymentPanel payments={d.payments} busy={busy} onConfirm={(body) => run(() => api(`/admin/projects/${id}/payments/confirm`, { method: 'POST', json: body }), 'Pembayaran dicatat.')} />
 
@@ -388,6 +390,50 @@ function NotePanel({ busy, onSave }: { busy: boolean; onSave: (n: string) => voi
         <textarea id="note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} placeholder="Hanya terlihat oleh staf. Jangan tulis kredensial." />
         <button className="btn btn-ghost btn-sm btn-block" disabled={busy || !note.trim()}>Simpan catatan</button>
       </form>
+    </article>
+  )
+}
+
+interface GatewayStatus { configured: boolean; environment?: string; merchantCodeMasked?: string; checkoutEnabled: boolean; credentialsVerified?: boolean; probeError?: string | null; methods?: { code: string; name: string }[]; callbackUrl?: string }
+interface GatewayOrder { id: string; merchantOrderId: string; amountMinor: number; status: string; paymentCode: string | null; expiresAt: string | null; paidAt: string | null; createdAt: string; environment: string; failureCode: string | null }
+
+function GatewayPanel({ projectId, busy, onReconcile }: { projectId: string; busy: boolean; onReconcile: (orderId: string) => Promise<unknown> }) {
+  const [status, setStatus] = useState<GatewayStatus | null>(null)
+  const [orders, setOrders] = useState<GatewayOrder[]>([])
+  const [err, setErr] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    try {
+      const [s, o] = await Promise.all([
+        api<GatewayStatus>('/admin/payments/duitku/status'),
+        api<{ orders: GatewayOrder[] }>(`/admin/projects/${projectId}/payment-orders`),
+      ])
+      setStatus(s); setOrders(o.orders); setErr(null)
+    } catch (e) { setErr(e instanceof ApiFailure ? e.body.message : 'Gagal memuat status gateway') }
+  }, [projectId])
+  useEffect(() => { void load() }, [load])
+  return (
+    <article className="panel" id="gateway-panel">
+      <h2 className="h4">Gateway Duitku</h2>
+      {err && <Alert kind="error">{err}</Alert>}
+      {status && (
+        <dl className="kv small">
+          <dt>Konfigurasi</dt><dd>{status.configured ? `${status.environment} · ${status.merchantCodeMasked}` : 'Belum dikonfigurasi'}</dd>
+          <dt>Kredensial</dt><dd>{status.credentialsVerified ? `Terverifikasi (${status.methods?.length ?? 0} metode)` : `Belum terverifikasi${status.probeError ? ` — ${status.probeError}` : ''}`}</dd>
+          <dt>Checkout online</dt><dd>{status.checkoutEnabled ? 'Aktif' : 'Nonaktif'}</dd>
+          {status.callbackUrl && <><dt>Callback URL</dt><dd className="mono">{status.callbackUrl}</dd></>}
+        </dl>
+      )}
+      {orders.length === 0 ? <p className="small muted">Belum ada invoice Duitku.</p> : (
+        <ul className="small plain">
+          {orders.map((o) => (
+            <li key={o.id}>
+              <span className="mono">{o.merchantOrderId}</span> · {formatIDR(o.amountMinor)} · <span className="tag">{o.status}</span>{o.failureCode ? ` (${o.failureCode})` : ''} · {formatDate(o.createdAt, true)}
+              {['created', 'pending'].includes(o.status) && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={async () => { await onReconcile(o.id); await load() }}>Cek ke Duitku</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="small muted">Status lunas hanya ditetapkan dari callback bertanda tangan valid + konfirmasi server-ke-server.</p>
     </article>
   )
 }

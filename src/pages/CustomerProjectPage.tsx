@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { Alert } from '../components/Field'
+import { PaymentPanel, type PaymentInfo } from '../components/PaymentPanel'
 import { api, ApiFailure, downloadFile, formatBytes, formatDate, type AssetInfo } from '../lib/api'
 import { SERVICE_LABELS, formatIDR, type ProjectStatus, type ServiceType } from '../../shared/domain'
 
@@ -11,6 +12,7 @@ interface CustomerProject {
   timeline: { status: string; label: string; at: string }[]
   feedback: { id: string; message: string; revision_round: number; within_scope: number; created_at: string }[]
   deliveryEnabled: boolean
+  payment: PaymentInfo
   assets: AssetInfo[]
   approvedAssetId: string | null
   actions: { canDecideQuote: boolean; canSubmitFeedback: boolean; canApprove: boolean }
@@ -103,12 +105,14 @@ export function CustomerProjectPage() {
             {q.notes && <p className="muted">{q.notes}</p>}
             {data.actions.canDecideQuote && (
               <div className="btn-row">
-                <button className="btn btn-primary" disabled={busy} onClick={() => act('/quote/decision', { decision: 'accepted' }, 'Penawaran disetujui. Tim kami akan mengonfirmasi langkah pembayaran.')}>Setujui penawaran</button>
+                <button className="btn btn-primary" disabled={busy} onClick={() => act('/quote/decision', { decision: 'accepted' }, data.payment.onlineEnabled ? 'Penawaran disetujui. Silakan lanjutkan pembayaran.' : 'Penawaran disetujui. Tim kami akan mengonfirmasi langkah pembayaran.')}>Setujui penawaran</button>
                 <button className="btn btn-ghost" disabled={busy} onClick={() => confirm('Tolak penawaran ini?') && act('/quote/decision', { decision: 'rejected' }, 'Penawaran ditolak. Tim kami akan menghubungi Anda.')}>Tolak</button>
               </div>
             )}
           </article>
         )}
+
+        {data.payment && <PaymentPanel reference={data.reference} token={token} payment={data.payment} onChanged={load} />}
 
         {data.assets.length > 0 && (
           <article className="panel" id="files-panel">

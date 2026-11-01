@@ -32,3 +32,27 @@ describe('A1 — deployment configuration isolation (static guard)', () => {
     expect(raw).not.toMatch(/ADMIN_PASSWORD_HASH|LINK_SIGNING_SECRET|pbkdf2\$/)
   })
 })
+
+describe('Duitku configuration (static guard)', () => {
+  const cfg = readJsonc('wrangler.jsonc')
+  const raw = readFileSync('wrangler.jsonc', 'utf8')
+  it('production declares DUITKU_ENV=production with online checkout OFF by default', () => {
+    expect(cfg.env.production.vars.DUITKU_ENV).toBe('production')
+    expect(cfg.env.production.vars.DUITKU_CHECKOUT_ENABLED).toBe('false')
+  })
+  it('merchant code and API key are never committed as plain vars', () => {
+    for (const vars of [cfg.vars, cfg.env.production.vars, cfg.env.preview.vars]) {
+      expect(vars?.DUITKU_API_KEY).toBeUndefined()
+      expect(vars?.DUITKU_MERCHANT_CODE).toBeUndefined()
+    }
+    expect(raw).not.toMatch(/[0-9a-f]{32}/i)
+  })
+  it('preview has no Duitku configuration at all', () => {
+    expect(Object.keys(cfg.env.preview.vars).filter((k) => k.startsWith('DUITKU'))).toEqual([])
+  })
+  it('CSP only allows official Duitku POP hosts for scripts', () => {
+    const headers = readFileSync('public/_headers', 'utf8')
+    const script = headers.match(/script-src ([^;]+);/)?.[1] ?? ''
+    expect(script.split(/\s+/).sort()).toEqual(["'self'", 'https://app-prod.duitku.com', 'https://app-sandbox.duitku.com'].sort())
+  })
+})
