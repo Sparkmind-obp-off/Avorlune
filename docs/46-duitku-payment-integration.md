@@ -1,59 +1,109 @@
 # 46 — Duitku POP Payment Integration
 
-Status (2026-11-01): **IMPLEMENTED · TESTED (local, 12 integration tests) · DEPLOYED (production, checkout OFF)** · Credentials **BLOCKED** (rejected by Duitku production, see §8).
+**Status (2026-11-01):** POP integration implemented and deployed; production checkout remains OFF.  
+**Environment decision:** AVORLUNE uses the owner's LIVE/PRODUCTION Duitku merchant credentials only. Do not use sandbox for these credentials.  
+**Credential diagnostics:** production probes have returned signature/authentication errors; these are unresolved diagnostics, not evidence that the credentials are sandbox.
 
 ## 1. Scope
-Online payment for an accepted quote via Duitku POP JS. Manual payment confirmation (docs/44) remains available and is unchanged.
 
-## 2. Configuration
-| Name | Where | Value |
+Online payment for an accepted quote via Duitku POP JS. Manual payment confirmation (docs/44) remains available and unchanged.
+
+The detailed LIVE endpoint and operating directive is in **docs/52**. This document records the current repository implementation and observed evidence.
+
+## 2. Production configuration
+
+| Name | Where | Production value |
 |---|---|---|
-| `DUITKU_ENV` | `wrangler.jsonc` env.production vars | `production` (`sandbox` supported) |
-| `DUITKU_CHECKOUT_ENABLED` | `wrangler.jsonc` env.production vars | `false` — customer checkout is refused (409 `PAYMENTS_DISABLED`) unless exactly `true` |
-| `DUITKU_MERCHANT_CODE` | Cloudflare Pages secret (production) | set 2026-11-01 |
-| `DUITKU_API_KEY` | Cloudflare Pages secret (production) | set 2026-11-01 |
+| `DUITKU_ENV` | Cloudflare production vars | `production` |
+| `DUITKU_CHECKOUT_ENABLED` | Cloudflare production vars | `false` until verification + owner approval |
+| `DUITKU_MERCHANT_CODE` | Cloudflare production secret | Set by owner |
+| `DUITKU_API_KEY` | Cloudflare production secret | Set by owner; never print or expose |
 
-Preview has **no** Duitku config and no DB (fail-closed). Static test `tests/unit/config.test.ts` asserts: checkout default OFF, no key/merchant code in config, no 32-hex strings in `wrangler.jsonc`, preview has no `DUITKU*` vars, CSP `script-src` only allows the two official POP hosts.
+The owner confirms the supplied merchant credentials are official LIVE/PRODUCTION credentials. They must not be routed to sandbox endpoints. Preview has no Duitku config and no production DB (fail-closed).
 
-## 3. Flow
+The current adapter retains a sandbox code path for isolated development compatibility, but it is not the AVORLUNE production operating mode and must never receive the owner's LIVE credentials.
+
+## 3. Official production endpoints
+
+| Function | Production endpoint |
+|---|---|
+| POP Create Invoice | `https://api-prod.duitku.com/api/merchant/createInvoice` |
+| Get Payment Method | `https://passport.duitku.com/webapi/api/merchant/paymentmethod/getpaymentmethod` |
+| Transaction Status | `https://passport.duitku.com/webapi/api/merchant/transactionStatus` |
+| POP JavaScript | `https://app-prod.duitku.com/lib/js/duitku.js` |
+| AVORLUNE callback | `https://avorlune.pages.dev/api/v1/payments/duitku/callback` |
+
+Do not collapse these into one host. See docs/52 for method, request, signature and callback details.
+
+## 4. Payment flow
+
 1. Customer accepts quote → project `quoted`/`awaiting_payment`.
-2. Portal `POST /api/v1/projects/:ref/payments/checkout` (`x-project-token`; body `{email?}` when contact is not email; 10/h/project). Server takes the amount **only** from the accepted quote, reuses a still-valid pending invoice, else calls Duitku `createInvoice` (expiry 60 min) with `merchantOrderId = <reference>-<hex4>`, `callbackUrl = <origin>/api/v1/payments/duitku/callback`, `returnUrl = <origin>/p/<ref>?payment=return`.
-3. Browser loads POP script (host allowlisted in code + CSP) and calls `checkout.process(reference, …)`. Fallback: redirect to `paymentUrl` (only `*.duitku.com`).
-4. Any POP event or return redirect only triggers `POST …/payments/:orderId/refresh` → server-to-server `transactionStatus`. The browser never sets status.
-5. Duitku callback (`application/x-www-form-urlencoded`) → `POST /api/v1/payments/duitku/callback`.
+2. Portal `POST /api/v1/projects/:ref/payments/checkout` (`x-project-token`; body `{email?}` when contact is not email; 10/h/project). Server takes the amount only from the accepted quote, reuses a still-valid pending invoice, else calls production Duitku `createInvoice` (expiry 60 min) with a unique `merchantOrderId`, callback URL and return URL.
+3. Browser loads production POP script and calls `checkout.process(reference, …)`.
+4. POP JS events and return redirect are informational only. They must not change payment state.
+5. Server refresh uses production `transactionStatus`.
+6. Duitku sends server-to-server callback (`application/x-www-form-urlencoded`) to the AVORLUNE callback endpoint.
 
-## 4. Settlement rules (`server/domain/payments.ts`)
-- Callback signature `HMAC_SHA256(merchantCode + amount + merchantOrderId, apiKey)` verified in constant time; merchant code must match; 16 KB cap; 120/min rate limit. Every callback is recorded in `payment_callbacks` (outcome, no secrets).
-- Amount must equal the order amount, else `Amount Mismatch` (logged as error, nothing paid).
-- `resultCode=00` is **not trusted alone**: server calls `transactionStatus`; only `statusCode=00` with the exact amount settles. Provider unavailable → 503 `Retry Later` (Duitku retries).
-- Settle once: guarded update `status IN ('created','pending')` → insert `payments` row (method `duitku:<code>`, status `paid`, `confirmed_by` NULL) + `payment_gateway_confirmed` event → system transition to `queued`. Unique partial index `idx_payments_gateway_ref` blocks duplicate gateway payments. Repeat callbacks answer `SUCCESS` idempotently.
-- `resultCode=01` / status `02` → `failed`; elapsed `expires_at` → `expired`; admin reconcile can mark `cancelled`.
+## 5. Settlement rules (`server/domain/payments.ts`)
 
-## 5. Endpoints
+- Callback signature: `HMAC_SHA256(merchantCode + amount + merchantOrderId, apiKey)`; verify in constant time and require matching merchant code.
+- Payload cap and callback rate limit apply; callback events are recorded without secrets.
+- Amount must equal the stored order amount.
+- Callback `resultCode=00` is not trusted alone: server calls production `transactionStatus`; only `statusCode=00` with the exact amount settles.
+- Provider unavailable → retryable response; callback can be retried.
+- Settle once with guarded state transition and unique gateway payment reference.
+- Repeated callbacks are idempotent.
+- Browser JS callback and return URL never mark an order paid.
+
+## 6. Current endpoints in AVORLUNE
+
 | Endpoint | Auth |
 |---|---|
-| `POST /payments/duitku/callback` | Duitku signature |
+| `POST /payments/duitku/callback` | Duitku HMAC signature |
 | `POST /projects/:ref/payments/checkout` | project token |
-| `POST /projects/:ref/payments/:orderId/refresh` | project token (order must belong to project) |
-| `GET /admin/payments/duitku/status` | admin — read-only `getpaymentmethod` probe; returns masked merchant code, never the key; 20/h |
-| `GET /admin/projects/:id/payment-orders` | admin — orders + callback log |
-| `POST /admin/projects/:id/payment-orders/:orderId/reconcile` | admin + CSRF — audited `payment_reconciled` |
+| `POST /projects/:ref/payments/:orderId/refresh` | project token; order must belong to project |
+| `GET /admin/payments/duitku/status` | admin; read-only payment-method probe; masked merchant code only |
+| `GET /admin/projects/:id/payment-orders` | admin; orders + callback log |
+| `POST /admin/projects/:id/payment-orders/:orderId/reconcile` | admin + CSRF; audited |
 
-## 6. Data (migration `0003_payments_duitku.sql`, additive)
-`payment_orders`, `payment_callbacks`, unique partial index on `payments(provider_reference)` for `duitku%` methods. Applied to production 2026-11-01 (bookmark before: `00000006-00000000-00005116-c931dd57e818bab9759200acc8efa1d5`).
+## 7. Data and refunds
 
-## 7. Refunds
-Duitku refunds are **not** executed through the API. Refund = manual process in the Duitku portal, then recorded by admin (existing `payments` status / cost ledger `refund` entries). Refund status automation: **NOT STARTED**.
+Migration `0003_payments_duitku.sql` adds `payment_orders`, `payment_callbacks`, and a unique partial index for gateway payment references. Applied to production 2026-11-01 (bookmark before: `00000006-00000000-00005116-c931dd57e818bab9759200acc8efa1d5`).
 
-## 8. Credential verification evidence (read-only, no invoice created)
-| Probe | Result |
-|---|---|
-| Production `getpaymentmethod` (HMAC-SHA256 and legacy SHA256 signature variants) | 403 `Invalid Signature` |
-| Production `transactionStatus` | 401 `Wrong signature` (same for a garbage signature) |
-| Production/sandbox `createInvoice` (empty body) | 400 `Merchant Not Found` |
-| Sandbox `getpaymentmethod` | 404 `Merchant not found` |
+Duitku refunds are not executed through the current API. Refunds remain a manual Duitku merchant-portal process, then recorded by admin. Refund automation is NOT STARTED.
 
-Conclusion: Duitku production does not accept the supplied merchant code + API key pair. **Owner action:** in the Duitku merchant portal check that (a) the project for merchant code D2***9 (as stored in the Cloudflare secret) is the one the key was copied from, (b) the key was copied completely (32 hex chars, no spaces), (c) the project is activated for production, (d) set Callback URL `https://avorlune.pages.dev/api/v1/payments/duitku/callback` and Return URL `https://avorlune.pages.dev`. Then: rotate secret if needed (`wrangler pages secret put DUITKU_API_KEY`), open Admin → project → *Gateway Duitku* (must show "Terverifikasi"), and only after owner approval set `DUITKU_CHECKOUT_ENABLED` to `"true"` and redeploy. First live transaction must be a small owner-authorised test.
+## 8. Observed production diagnostics
 
-## 9. Live smoke tests (2026-11-01, deployment 7cc67c20)
-`/health` 200 · callback bad signature → 400 `Bad Signature` · callback missing params → 400 `Bad Parameter` · preview callback → 503 `DATABASE_UNAVAILABLE` · admin status unauthenticated → 401 · checkout without token → 404 · CSP header includes only Duitku POP hosts.
+The previous read-only diagnostics recorded:
+- production payment-method probe: HTTP 403 `Invalid Signature` for tested signature variants;
+- production transaction-status probe: HTTP 401 `Wrong signature` (the same response was observed for a deliberately invalid signature);
+- an empty/invalid Create Invoice request returned a merchant-related error.
+
+These observations do not prove the owner's credentials are sandbox, and an empty Create Invoice request is not a valid credential test. They indicate that the exact production request/authentication flow still needs diagnosis. The owner confirms the merchant credentials are LIVE/PRODUCTION.
+
+No invoice or charge was created during those read-only diagnostics. Do not change the environment to sandbox or create an invoice just to debug authentication.
+
+## 9. Safe diagnostic sequence
+
+1. Inspect current adapter, tests and deployment config before changing code.
+2. Confirm production runtime selects `DUITKU_ENV=production` and the production endpoints in §3.
+3. Confirm the production secrets exist without printing their values.
+4. Confirm merchant code and API key belong to the same LIVE project in the merchant portal.
+5. Compare each API operation with its own current official documentation: method, content type, header names, timestamp units, Jakarta datetime, exact HMAC input order, amount representation and body serialization.
+6. Use read-only production `getpaymentmethod` as the initial credential probe; respect provider rate limits.
+7. Do not use an empty Create Invoice request as a credential test.
+8. Do not create a real invoice during signature debugging.
+9. Once read-only authentication passes, present the proposed low-value LIVE transaction and obtain explicit owner approval.
+10. After approval, verify POP display, server callback, server-side transaction status, amount, idempotency and admin reconciliation.
+11. Enable `DUITKU_CHECKOUT_ENABLED=true` only after owner approval and successful evidence-backed acceptance tests.
+
+## 10. Checkout safety
+
+Checkout remains OFF (`DUITKU_CHECKOUT_ENABLED=false`). No live transaction has been reported as completed. Manual payment confirmation remains the fallback. Do not claim online payment acceptance is live until a controlled owner-approved production payment has been verified end-to-end.
+
+## 11. Official references
+
+- Duitku POP API: https://docs.duitku.com/pop/id/
+- Duitku API (payment methods and transaction status): https://docs.duitku.com/api/id/
+- Merchant portal: https://passport.duitku.com/
+- Detailed AVORLUNE LIVE directive: docs/52
