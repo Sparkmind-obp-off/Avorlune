@@ -24,7 +24,7 @@ The approved target is **exactly two frontend applications**, in one repository:
 1. **Customer frontend** — Clerk authentication for customers only.
 2. **Admin frontend** — separate Cloudflare Pages deployment with first-party AVORLUNE admin authentication. No Clerk, no public registration, and no admin login link/menu on the customer frontend.
 
-Both frontends will use one shared backend API, one production D1 database, and (after owner approval) one private R2 bucket. The API is a backend service, not a third frontend.
+Both frontends will use one shared backend API, one production D1 database, and one private R2 bucket. R2 is a required dependency before customer file upload/private delivery can go live; the bucket is not yet provisioned and activation awaits owner billing approval. The API is a backend service, not a third frontend.
 
 Proposed future URLs (not yet configured):
 - Customer: `avorlune.com` (current fallback: `avorlune.pages.dev`)
@@ -36,6 +36,9 @@ Architecture and implementation documents:
 - `docs/48-admin-authentication-and-security-spec.md`
 - `docs/49-two-pages-deployments-and-shared-api-runbook.md`
 - `docs/50-customer-auth-migration-and-acceptance-plan.md`
+- `docs/51-cloudflare-r2-production-storage-spec.md` — required private production storage, activation and cost controls
+- `docs/52-duitku-live-production-endpoints-and-operations.md` — official LIVE endpoints, signatures, callback and safe diagnostics
+- `docs/53-external-provider-and-operations-register.md` — required/optional providers and remaining operational capabilities
 
 **Important:** This is the approved target architecture, not a claim that the two Pages projects, Clerk customer auth, or standalone Worker API have already been implemented. Current production remains the single Pages deployment described below until a tested migration is completed.
 
@@ -53,7 +56,7 @@ Architecture and implementation documents:
 | Private delivery (code) | Upload/list/download/revoke behind an R2 binding `DELIVERY_BUCKET` — magic-byte allowlist, 25 MB cap, random keys, header-auth download, `private, no-store`, audit. **Not live: R2 not provisioned (owner approval pending).** |
 | Environment isolation | Preview deployments have no D1/R2 binding; runtime guard requires `app_meta.environment == APP_ENV`; static config test. Verified live (preview API → 503). |
 | Customer view | `/p/:reference#t=<token>` — HMAC-signed, 30-day, revocable; status, timeline, quote decision, consolidated feedback, private file list/download and final approval (when delivery is enabled). |
-| Duitku POP payment | Checkout from the customer portal (amount from accepted quote, invoice reuse, 60-min expiry), signed callback + amount check + server-to-server status before settling once → `queued`; admin gateway status probe (masked), order list, reconcile. **Deployed with checkout OFF; credentials rejected by Duitku production — owner verification pending (`docs/46`).** |
+| Duitku POP payment | Checkout from the customer portal (amount from accepted quote, invoice reuse, 60-min expiry), signed callback + amount check + server-to-server status before settling once → `queued`; admin gateway status probe (masked), order list, reconcile. **Deployed with checkout OFF; LIVE production authentication diagnostics remain unresolved. Owner confirms supplied credentials are LIVE/PRODUCTION; errors do not mean they are sandbox. See `docs/46` and `docs/52`.** |
 | Tests | 88 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
 
 ### Not yet implemented / blocked
