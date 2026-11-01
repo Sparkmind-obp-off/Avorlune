@@ -5,6 +5,9 @@ import { ApiError, clientIp, newId, nowIso, ok, parseJson } from '../lib/http'
 import { enforceRateLimit } from '../lib/rateLimit'
 import { verifyProjectToken } from '../lib/projectToken'
 import { getProjectByReference, latestQuote, transition, GUARD_SUFFIX, type ProjectRow } from '../domain/projects'
+import { CUSTOMER_VISIBLE_STATUSES, assertValidFinalAsset, getProjectAsset, hasValidFinalAsset, publicAsset, streamAsset, type AssetRow } from '../domain/assets'
+import { deliveryEnabled } from '../domain/assets'
+import { z } from 'zod'
 import { eventStmt } from '../domain/events'
 
 export const customerRoutes = new Hono<AppBindings>()
@@ -61,12 +64,36 @@ customerRoutes.get('/projects/:reference', async (c) => {
       : null,
     timeline: (events.results ?? []).map((e) => ({ status: e.to_status, label: STATUS_LABELS[e.to_status as keyof typeof STATUS_LABELS] ?? e.to_status, at: e.created_at })),
     feedback: fb.results ?? [],
+    deliveryEnabled: deliveryEnabled(c.env),
+    assets: await customerAssets(deliveryEnabled(c.env) ? db : null, p),
+    approvedAssetId: p.approved_asset_id ?? null,
     actions: {
       canDecideQuote: p.status === 'quoted' && q?.status === 'sent',
       canSubmitFeedback: p.status === 'customer_review',
-      canApprove: p.status === 'customer_review',
+      // A2: approval is offered only when a valid private final deliverable exists.
+      canApprove: p.status === 'customer_review' && (await hasValidFinalAsset(c.env, db, p.id)),
     },
   })
+})
+
+async function customerAssets(db: D1Database | null, p: ProjectRow) {
+  if (!db || !(CUSTOMER_VISIBLE_STATUSES as readonly string[]).includes(p.status)) return []
+  const rows = await db
+    .prepare(`SELECT * FROM assets WHERE project_id = ?1 AND status = 'active' AND asset_kind IN ('preview','final') ORDER BY created_at DESC LIMIT 100`)
+    .bind(p.id)
+    .all<AssetRow>()
+  return (rows.results ?? []).map(publicAsset)
+}
+
+/** Authorized download (token in header, never in URL). Object keys are never exposed. */
+customerRoutes.get('/projects/:reference/assets/:assetId/download', async (c) => {
+  const p = await authorizeCustomer(c)
+  if (!(CUSTOMER_VISIBLE_STATUSES as readonly string[]).includes(p.status)) throw notFound()
+  const a = await getProjectAsset(c.env.DB, p.id, c.req.param('assetId'))
+  if (!a || a.status !== 'active' || !['preview', 'final'].includes(a.asset_kind)) throw new ApiError(404, 'NOT_FOUND', 'File tidak tersedia')
+  const res = await streamAsset(c.env, a)
+  await eventStmt(c.env.DB, { projectId: p.id, actorType: 'customer', eventType: 'asset_downloaded', metadata: { assetId: a.id, kind: a.asset_kind } }).run()
+  return res
 })
 
 customerRoutes.post('/projects/:reference/quote/decision', async (c) => {
@@ -106,9 +133,21 @@ customerRoutes.post('/projects/:reference/feedback', async (c) => {
   return ok(c, { feedbackId, revisionRound: round, withinScope: !!withinScope }, 201)
 })
 
+const approvalSchema = z.object({ assetId: z.string().uuid() })
+
+/**
+ * A2 — final approval is bound to one specific, valid, private final asset of THIS project.
+ * Repeat approvals are rejected (project no longer in customer_review).
+ */
 customerRoutes.post('/projects/:reference/approval', async (c) => {
   const p = await authorizeCustomer(c)
   if (p.status !== 'customer_review') throw new ApiError(409, 'NOT_IN_REVIEW', 'Persetujuan hanya dapat diberikan saat tahap review klien')
-  await transition(c.env.DB, p, 'approved', { type: 'customer' }, { via: 'customer_link' })
-  return ok(c, { status: 'approved' })
+  if (!deliveryEnabled(c.env)) throw new ApiError(409, 'DELIVERY_UNAVAILABLE', 'Persetujuan akhir dinonaktifkan sampai pengiriman file privat aktif.')
+  const { assetId } = await parseJson(c, approvalSchema)
+  const db = c.env.DB
+  const a = await assertValidFinalAsset(c.env, db, p.id, assetId)
+  await transition(db, p, 'approved', { type: 'customer' }, { via: 'customer_link', assetId: a.id, assetVersion: a.version, checksum: a.checksum }, (stamp) => [
+    db.prepare(`UPDATE projects SET approved_asset_id = ?1 WHERE id = ?2 AND status = 'approved' AND updated_at = ?3`).bind(a.id, p.id, stamp),
+  ])
+  return ok(c, { status: 'approved', assetId: a.id })
 })

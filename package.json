@@ -13,14 +13,18 @@
     "check": "npm run typecheck && npm run lint && npm run test",
     "db:migrate:local": "wrangler d1 migrations apply avorlune-production --local",
     "db:migrate:prod": "wrangler d1 migrations apply avorlune-production --remote",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name avorlune --branch main"
+    "deploy": "npm run check && npm run build && wrangler pages deploy dist --project-name avorlune --branch main",
+    "db:stamp:local": "wrangler d1 execute avorlune-production --local --command \"INSERT OR IGNORE INTO app_meta (key, value, updated_at) VALUES ('environment','development',datetime('now'))\"",
+    "db:stamp:prod": "wrangler d1 execute avorlune-production --remote --command \"INSERT OR IGNORE INTO app_meta (key, value, updated_at) VALUES ('environment','production',datetime('now'))\"",
+    "db:bookmark:prod": "wrangler d1 time-travel info avorlune-production",
+    "deploy:preview": "npm run build && wrangler pages deploy dist --project-name avorlune --branch preview"
   },
   "dependencies": {
     "hono": "^4.13.14",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.6",
-    "zod": "^3.25.76"
+    "react-router-dom": "^7.18.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261031.1",

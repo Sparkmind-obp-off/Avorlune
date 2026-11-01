@@ -234,3 +234,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); outline
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* Assets */
+.asset-list { list-style: none; padding: 0; margin: 0 0 1rem; }
+.asset-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid var(--line); padding: .75rem 0; }
+.asset-list li:first-child { border-top: 0; }
+.asset-list li.is-revoked { opacity: .55; }
+.asset-list strong { overflow-wrap: anywhere; }
+.btn-row.tight { margin-top: 0; gap: .4rem; flex-wrap: nowrap; }
+.upload-form { border-top: 1px solid var(--line); padding-top: 1rem; }
+.approve-box { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: 1rem; }
+.t-final { color: var(--accent); } .t-preview { color: #a9bddb; }
+@media (max-width: 560px) { .asset-list li { flex-direction: column; align-items: flex-start; } }

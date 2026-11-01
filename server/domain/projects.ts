@@ -2,6 +2,8 @@ import type { ProjectStatus } from '../../shared/domain'
 import { canTransition } from '../../shared/domain'
 import { ApiError, newId, nowIso } from '../lib/http'
 import type { ActorType } from './events'
+import type { Env } from '../env'
+import { assertValidFinalAsset, getProjectAsset } from './assets'
 
 export interface ProjectRow {
   id: string
@@ -18,6 +20,7 @@ export interface ProjectRow {
   status: ProjectStatus
   access_token_version: number
   revision_rounds_used: number
+  approved_asset_id: string | null
   created_at: string
   updated_at: string
 }
@@ -59,7 +62,7 @@ export async function hasConfirmedPayment(db: D1Database, projectId: string) {
  * - "approved" set by staff needs a reason (e.g. approval received through another channel).
  * - "cancelled" needs a reason.
  */
-export async function assertTransitionAllowed(db: D1Database, p: ProjectRow, to: ProjectStatus, reason?: string) {
+export async function assertTransitionAllowed(db: D1Database, p: ProjectRow, to: ProjectStatus, reason?: string, env?: Env, assetId?: string) {
   if (!canTransition(p.status, to)) {
     throw new ApiError(409, 'INVALID_TRANSITION', `Transisi ${p.status} → ${to} tidak diizinkan`)
   }
@@ -72,6 +75,14 @@ export async function assertTransitionAllowed(db: D1Database, p: ProjectRow, to:
   }
   if ((to === 'cancelled' || to === 'approved') && !reason) {
     throw new ApiError(422, 'REASON_REQUIRED', 'Alasan wajib diisi untuk transisi ini')
+  }
+  // A2 — staff-recorded approval obeys the same final-deliverable invariant as customer approval.
+  if (to === 'approved') await assertValidFinalAsset(env ?? {}, db, p.id, assetId)
+  // A2 — "delivered" requires the approved final asset to still be valid and present.
+  if (to === 'delivered') {
+    const a = p.approved_asset_id ? await getProjectAsset(db, p.id, p.approved_asset_id) : null
+    if (!a) throw new ApiError(409, 'FINAL_ASSET_INVALID', 'Tidak ada file final yang disetujui')
+    await assertValidFinalAsset(env ?? {}, db, p.id, a.id)
   }
 }
 

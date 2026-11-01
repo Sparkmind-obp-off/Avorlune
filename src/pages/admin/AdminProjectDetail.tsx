@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, ApiFailure, formatDate } from '../../lib/api'
+import { api, ApiFailure, downloadFile, formatBytes, formatDate, uploadBinary, type AssetInfo } from '../../lib/api'
 import { Alert, Field } from '../../components/Field'
 import {
-  BUDGET_LABELS, DEADLINE_LABELS, REASON_REQUIRED_TARGETS, SERVICE_LABELS, STATUS_LABELS, TRANSITIONS, formatIDR,
+  BUDGET_LABELS, COST_KINDS, COST_LABELS, DEADLINE_LABELS, REASON_REQUIRED_TARGETS, SERVICE_LABELS, STATUS_LABELS, TRANSITIONS, formatIDR,
   type ProjectStatus, type ServiceType,
 } from '../../../shared/domain'
 
@@ -11,19 +11,24 @@ interface Detail {
   project: {
     id: string; public_reference: string; customer_name: string; contact_method: string; customer_contact: string; service_type: ServiceType
     title: string; objective: string; intended_use: string; requested_deadline: string | null; status: ProjectStatus; revision_rounds_used: number
-    created_at: string; updated_at: string
+    created_at: string; updated_at: string; approved_asset_id: string | null
     brief: { description: string; desiredFormat: string; deadlinePreference: keyof typeof DEADLINE_LABELS; brandUrl: string | null; referenceLinks: string[]; budgetRange: keyof typeof BUDGET_LABELS; consentAt: string; rightsConfirmedAt: string }
   }
   quotes: { id: string; status: string; amount_minor: number; included_revision_rounds: number; estimated_delivery_at: string | null; created_at: string; accepted_at: string | null; scope: { deliverables: string[]; notes: string | null } }[]
   payments: { id: string; amount_minor: number; method: string; provider_reference: string | null; status: string; confirmed_at: string }[]
   feedback: { id: string; message: string; revision_round: number; within_scope: number; submitted_via: string; created_at: string }[]
   events: { id: string; event_type: string; actor_type: string; actor_email: string | null; from_status: string | null; to_status: string | null; metadata: Record<string, unknown>; created_at: string }[]
+  deliveryEnabled: boolean
+  assets: AssetInfo[]
+  costs: { id: string; kind: keyof typeof COST_LABELS; amount_minor: number; minutes: number; note: string | null; created_at: string }[]
+  economics: { revenueConfirmed: number; directCost: number; laborCost: number; refunds: number; laborMinutes: number; grossContribution: number }
 }
 
 const EVENT_LABELS: Record<string, string> = {
   inquiry_created: 'Brief masuk', status_changed: 'Status diubah', quote_sent: 'Penawaran dikirim', quote_drafted: 'Draf penawaran',
   quote_accepted: 'Penawaran disetujui klien', quote_rejected: 'Penawaran ditolak klien', payment_manually_confirmed: 'Pembayaran dikonfirmasi manual',
   internal_note: 'Catatan internal', access_link_issued: 'Tautan klien dibuat', access_link_rotated: 'Tautan klien dirotasi (lama dicabut)',
+  asset_uploaded: 'File diunggah', asset_revoked: 'File ditarik', asset_downloaded: 'File diunduh klien', project_exported: 'Data proyek diekspor', cost_recorded: 'Biaya dicatat',
 }
 
 export function AdminProjectDetail() {
@@ -87,6 +92,11 @@ export function AdminProjectDetail() {
             </dl>
           </article>
 
+          <AssetPanel d={d} busy={busy} projectId={id}
+            onUpload={(kind, file) => run(() => uploadBinary(`/admin/projects/${id}/assets?kind=${kind}&filename=${encodeURIComponent(file.name)}`, file), 'File diunggah.')}
+            onRevoke={(assetId, note) => run(() => api(`/admin/projects/${id}/assets/${assetId}/revoke`, { method: 'POST', json: { note } }), 'File ditarik.')}
+            onError={setError} />
+
           <QuotePanel d={d} busy={busy} onCreate={(body) => run(() => api(`/admin/projects/${id}/quotes`, { method: 'POST', json: body }), body.status === 'sent' ? 'Penawaran dikirim.' : 'Draf disimpan.')} />
 
           <article className="panel">
@@ -118,7 +128,10 @@ export function AdminProjectDetail() {
         </div>
 
         <aside className="detail-side">
-          <StatusPanel status={p.status} next={next} busy={busy} onChange={(toStatus, reason) => run(() => api(`/admin/projects/${id}/status`, { method: 'PATCH', json: { toStatus, reason: reason || undefined } }), `Status → ${STATUS_LABELS[toStatus]}`)} />
+          <StatusPanel status={p.status} next={next} busy={busy} finals={d.assets.filter((a) => a.kind === 'final' && a.status === 'active')} deliveryEnabled={d.deliveryEnabled}
+            onChange={(toStatus, reason, assetId) => run(() => api(`/admin/projects/${id}/status`, { method: 'PATCH', json: { toStatus, reason: reason || undefined, assetId: assetId || undefined } }), `Status → ${STATUS_LABELS[toStatus]}`)} />
+
+          <CostPanel d={d} busy={busy} onAdd={(body) => run(() => api(`/admin/projects/${id}/costs`, { method: 'POST', json: body }), 'Biaya dicatat.')} />
 
           <PaymentPanel payments={d.payments} busy={busy} onConfirm={(body) => run(() => api(`/admin/projects/${id}/payments/confirm`, { method: 'POST', json: body }), 'Pembayaran dicatat.')} />
 
@@ -154,21 +167,32 @@ export function AdminProjectDetail() {
   )
 }
 
-function StatusPanel({ status, next, busy, onChange }: { status: ProjectStatus; next: readonly ProjectStatus[]; busy: boolean; onChange: (s: ProjectStatus, reason: string) => void }) {
+function StatusPanel({ status, next, busy, finals, deliveryEnabled, onChange }: { status: ProjectStatus; next: readonly ProjectStatus[]; busy: boolean; finals: AssetInfo[]; deliveryEnabled: boolean; onChange: (s: ProjectStatus, reason: string, assetId: string) => void }) {
   const [to, setTo] = useState<ProjectStatus | ''>('')
   const [reason, setReason] = useState('')
-  const needReason = to !== '' && (REASON_REQUIRED_TARGETS.includes(to) || (to === 'queued'))
+  const [assetId, setAssetId] = useState('')
+  const needReason = to !== '' && (REASON_REQUIRED_TARGETS.includes(to) || to === 'queued')
   return (
     <article className="panel">
       <h2 className="h4">Status</h2>
       {next.length === 0 ? <p className="muted small">Status final — tidak ada transisi lanjutan.</p> : (
-        <form onSubmit={(e) => { e.preventDefault(); if (to) { onChange(to, reason); setTo(''); setReason('') } }}>
+        <form onSubmit={(e) => { e.preventDefault(); if (to) { onChange(to, reason, assetId); setTo(''); setReason(''); setAssetId('') } }}>
           <Field id="toStatus" label="Pindahkan ke" required>
             <select id="toStatus" value={to} onChange={(e) => setTo(e.target.value as ProjectStatus)}>
               <option value="">Pilih…</option>
               {next.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
             </select>
           </Field>
+          {to === 'approved' && (
+            deliveryEnabled ? (
+              <Field id="approveAsset" label="File final yang disetujui" required>
+                <select id="approveAsset" value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+                  <option value="">Pilih file final…</option>
+                  {finals.map((a) => <option key={a.id} value={a.id}>{a.filename} (v{a.version})</option>)}
+                </select>
+              </Field>
+            ) : <p className="small alert alert-info">Persetujuan dinonaktifkan: pengiriman file privat belum aktif.</p>
+          )}
           {needReason && (
             <Field id="reason" label="Alasan" required={to !== 'queued'} hint={to === 'queued' ? 'Wajib jika pembayaran belum dikonfirmasi (pengecualian).' : to === 'approved' ? 'Mis. persetujuan klien via email/WA tanggal …' : undefined}>
               <textarea id="reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
@@ -178,6 +202,94 @@ function StatusPanel({ status, next, busy, onChange }: { status: ProjectStatus; 
         </form>
       )}
       <p className="small muted">Saat ini: {STATUS_LABELS[status]}</p>
+    </article>
+  )
+}
+
+function AssetPanel({ d, busy, projectId, onUpload, onRevoke, onError }: { d: Detail; busy: boolean; projectId: string; onUpload: (kind: 'preview' | 'final', f: File) => void; onRevoke: (id: string, note: string) => void; onError: (m: string) => void }) {
+  const [kind, setKind] = useState<'preview' | 'final'>('preview')
+  const [file, setFile] = useState<File | null>(null)
+  const canUpload = ['producing', 'internal_review', 'customer_review', 'revision'].includes(d.project.status)
+  return (
+    <article className="panel" id="assets-panel">
+      <h2 className="h4">File privat</h2>
+      {!d.deliveryEnabled ? (
+        <div className="alert alert-info small">
+          Pengiriman file privat <strong>belum aktif</strong> (bucket R2 belum disetujui). Kirim file melalui kanal privat sesuai runbook
+          <span className="mono"> docs/41</span>. Persetujuan akhir di portal dinonaktifkan sampai fitur ini aktif.
+        </div>
+      ) : (
+        <>
+          {d.assets.length === 0 ? <p className="small muted">Belum ada file.</p> : (
+            <ul className="asset-list">
+              {d.assets.map((a) => (
+                <li key={a.id} className={a.status === 'revoked' ? 'is-revoked' : ''}>
+                  <div>
+                    <strong>{a.filename}</strong> <span className={`tag t-${a.kind}`}>{a.kind} v{a.version}</span>
+                    {a.status === 'revoked' && <span className="tag t-rejected">ditarik</span>}
+                    {d.project.approved_asset_id === a.id && <span className="tag t-accepted">disetujui</span>}
+                    <div className="small muted">{a.mimeType} · {formatBytes(a.sizeBytes)} · {formatDate(a.createdAt, true)}</div>
+                  </div>
+                  <div className="btn-row tight">
+                    <button className="btn btn-ghost btn-sm" onClick={() => downloadFile(`/admin/projects/${projectId}/assets/${a.id}/download`, a.filename ?? 'asset').catch((e) => onError(e instanceof ApiFailure ? e.body.message : 'Unduhan gagal'))}>Unduh</button>
+                    {a.status === 'active' && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { const note = prompt('Alasan menarik file ini?'); if (note && note.trim()) onRevoke(a.id, note.trim()) }}>Tarik</button>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {canUpload ? (
+            <form className="upload-form" onSubmit={(e) => { e.preventDefault(); if (file) { onUpload(kind, file); setFile(null); (e.target as HTMLFormElement).reset() } }}>
+              <div className="grid-2">
+                <Field id="assetKind" label="Jenis" required>
+                  <select id="assetKind" value={kind} onChange={(e) => setKind(e.target.value as 'preview' | 'final')}>
+                    <option value="preview">Preview</option>
+                    <option value="final">Final</option>
+                  </select>
+                </Field>
+                <Field id="assetFile" label="File" required hint="PNG, JPEG, WebP, MP4, MOV, WebM, PDF · maks 25 MB">
+                  <input id="assetFile" type="file" accept=".png,.jpg,.jpeg,.webp,.mp4,.mov,.webm,.pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </Field>
+              </div>
+              <button className="btn btn-primary btn-sm" disabled={busy || !file}>Unggah privat</button>
+            </form>
+          ) : <p className="small muted">Unggah tersedia pada tahap Produksi, Review internal, Review klien atau Revisi.</p>}
+        </>
+      )}
+    </article>
+  )
+}
+
+function CostPanel({ d, busy, onAdd }: { d: Detail; busy: boolean; onAdd: (b: { kind: string; amountMinor: number; minutes: number; note?: string }) => void }) {
+  const [kind, setKind] = useState<string>('labor')
+  const [amount, setAmount] = useState('')
+  const [minutes, setMinutes] = useState('')
+  const [note, setNote] = useState('')
+  const e = d.economics
+  return (
+    <article className="panel">
+      <h2 className="h4">Biaya & margin</h2>
+      <dl className="kv small">
+        <dt>Pembayaran terkonfirmasi</dt><dd>{formatIDR(e.revenueConfirmed)}</dd>
+        <dt>Biaya langsung</dt><dd>{formatIDR(e.directCost)}</dd>
+        <dt>Biaya tenaga</dt><dd>{formatIDR(e.laborCost)} · {Math.round(e.laborMinutes / 6) / 10} jam</dd>
+        <dt>Refund</dt><dd>{formatIDR(e.refunds)}</dd>
+        <dt>Kontribusi kotor</dt><dd><strong>{formatIDR(e.grossContribution)}</strong></dd>
+      </dl>
+      <form onSubmit={(ev) => { ev.preventDefault(); onAdd({ kind, amountMinor: Number(amount.replace(/[^\d]/g, '')) || 0, minutes: Number(minutes) || 0, note: note || undefined }); setAmount(''); setMinutes(''); setNote('') }}>
+        <Field id="costKind" label="Jenis" required>
+          <select id="costKind" value={kind} onChange={(ev) => setKind(ev.target.value)}>
+            {COST_KINDS.map((k) => <option key={k} value={k}>{COST_LABELS[k]}</option>)}
+          </select>
+        </Field>
+        <div className="grid-2">
+          <Field id="costAmount" label="Jumlah (IDR)"><input id="costAmount" inputMode="numeric" value={amount} onChange={(ev) => setAmount(ev.target.value)} /></Field>
+          <Field id="costMinutes" label="Menit"><input id="costMinutes" type="number" min={0} value={minutes} onChange={(ev) => setMinutes(ev.target.value)} /></Field>
+        </div>
+        <Field id="costNote" label="Catatan"><input id="costNote" value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={300} /></Field>
+        <button className="btn btn-ghost btn-sm btn-block" disabled={busy || (!amount && !minutes)}>Catat aktual</button>
+      </form>
+      <p className="small muted">Hanya angka aktual. Estimasi tidak dicatat di sini.</p>
     </article>
   )
 }

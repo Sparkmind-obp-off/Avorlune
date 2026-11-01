@@ -23,3 +23,12 @@ export async function enforceRateLimit(db: D1Database, scope: string, identifier
     throw new ApiError(429, 'RATE_LIMITED', 'Terlalu banyak permintaan. Coba lagi nanti.')
   }
 }
+
+/** B3 — bounded retention for operational tables (no cron): stale rate-limit windows and old idempotency keys. */
+export async function pruneOperationalData(db: D1Database) {
+  const now = Math.floor(Date.now() / 1000)
+  await db.batch([
+    db.prepare('DELETE FROM rate_limits WHERE window_start < ?1').bind(now - 2 * 86400),
+    db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?1').bind(new Date(Date.now() - 7 * 86400 * 1000).toISOString()),
+  ])
+}

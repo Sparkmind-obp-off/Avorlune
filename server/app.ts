@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { secureHeaders } from 'hono/secure-headers'
 import type { AppBindings } from './env'
 import { ApiError } from './lib/http'
+import { logEvent } from './lib/log'
+import { envGuard } from './middleware/envGuard'
 import { publicRoutes } from './routes/public'
 import { customerRoutes } from './routes/customer'
 import { adminRoutes } from './routes/admin'
@@ -12,10 +14,11 @@ export function createApp() {
   app.use('*', async (c, next) => {
     c.set('requestId', crypto.randomUUID())
     await next()
-    c.header('cache-control', 'no-store')
+    if (!c.res.headers.get('cache-control')) c.header('cache-control', 'no-store')
     c.header('x-request-id', c.get('requestId'))
   })
   app.use('*', secureHeaders({ referrerPolicy: 'no-referrer', crossOriginResourcePolicy: 'same-origin' }))
+  app.use('*', envGuard)
 
   app.route('/', publicRoutes)
   app.route('/', customerRoutes)
@@ -28,8 +31,8 @@ export function createApp() {
     if (err instanceof ApiError) {
       return c.json({ error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) }, requestId }, err.status)
     }
-    // Redacted structured log: no body, headers, contact data or tokens.
-    console.error(JSON.stringify({ level: 'error', requestId, path: new URL(c.req.url).pathname, method: c.req.method, name: (err as Error)?.name, message: String((err as Error)?.message ?? '').slice(0, 200) }))
+    // Redacted structured log: no body, headers, query string, contact data or tokens.
+    logEvent('error', 'unhandled_error', { requestId, path: new URL(c.req.url).pathname, method: c.req.method, name: (err as Error)?.name, message: String((err as Error)?.message ?? '') })
     return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Terjadi kesalahan pada server' }, requestId }, 500)
   })
 

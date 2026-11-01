@@ -98,8 +98,8 @@ export const inquirySchema = z
     brandUrl: httpUrl.optional().or(z.literal('').transform(() => undefined)),
     referenceLinks: z.array(httpUrl).max(5).default([]),
     budgetRange: z.enum(BUDGET_RANGES).default('undisclosed'),
-    consent: z.literal(true, { errorMap: () => ({ message: 'Persetujuan wajib dicentang' }) }),
-    rightsConfirmed: z.literal(true, { errorMap: () => ({ message: 'Konfirmasi hak materi wajib dicentang' }) }),
+    consent: z.literal(true, { error: 'Persetujuan wajib dicentang' }),
+    rightsConfirmed: z.literal(true, { error: 'Konfirmasi hak materi wajib dicentang' }),
     // Anti-spam: honeypot must stay empty; formStartedAt is the client timestamp (ms) when the form was rendered.
     website: z.string().max(0).optional().default(''),
     formStartedAt: z.number().int().positive().optional(),
@@ -121,7 +121,20 @@ export type Inquiry = z.output<typeof inquirySchema>
 export const statusChangeSchema = z.object({
   toStatus: z.enum(PROJECT_STATUSES),
   reason: z.string().trim().max(500).optional(),
+  /** Required when moving to "approved": the specific final asset approved. */
+  assetId: z.string().uuid().optional(),
 })
+
+export const COST_KINDS = ['labor', 'tool', 'stock_license', 'payment_fee', 'refund', 'other'] as const
+export const COST_LABELS: Record<(typeof COST_KINDS)[number], string> = {
+  labor: 'Waktu kerja', tool: 'Alat/AI kredit', stock_license: 'Lisensi stok/musik', payment_fee: 'Biaya pembayaran', refund: 'Refund', other: 'Lainnya',
+}
+export const costSchema = z.object({
+  kind: z.enum(COST_KINDS),
+  amountMinor: z.number().int().min(0).max(10_000_000_000).default(0),
+  minutes: z.number().int().min(0).max(100_000).default(0),
+  note: z.string().trim().max(300).optional(),
+}).refine((v) => v.amountMinor > 0 || v.minutes > 0, { message: 'Isi jumlah biaya atau menit' })
 
 export const quoteSchema = z.object({
   amountMinor: z.number().int().min(0).max(10_000_000_000),

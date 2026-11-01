@@ -4,7 +4,7 @@ import type { AppBindings } from '../env'
 
 export class ApiError extends Error {
   constructor(
-    public status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 429 | 500 | 503,
+    public status: 400 | 401 | 403 | 404 | 409 | 411 | 413 | 415 | 422 | 429 | 500 | 503,
     public code: string,
     message: string,
     public details?: unknown,
@@ -49,6 +49,11 @@ export async function parseJson<T>(c: Context<AppBindings>, schema: ZodSchema<T>
 export const nowIso = () => new Date().toISOString()
 export const newId = () => crypto.randomUUID()
 
+/**
+ * B1 — only the Cloudflare-set `cf-connecting-ip` header is trusted. Client-supplied
+ * X-Forwarded-For / X-Real-IP are ignored so they cannot be used to evade rate limits.
+ * (Cloudflare overwrites cf-connecting-ip on every request to a Pages deployment.)
+ */
 export function clientIp(c: Context<AppBindings>): string {
-  return c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  return c.req.header('cf-connecting-ip')?.trim() || 'unknown'
 }

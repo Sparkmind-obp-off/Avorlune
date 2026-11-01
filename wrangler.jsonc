@@ -4,12 +4,29 @@
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
   "pages_build_output_dir": "./dist",
-  "vars": { "APP_ENV": "production" },
+
+  // Top-level = local development (`wrangler pages dev`). .dev.vars overrides APP_ENV=development.
+  "vars": { "APP_ENV": "development" },
   "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "avorlune-production",
-      "database_id": "52632cba-6b60-44e9-ae3b-3bc82fdbeb43"
+    { "binding": "DB", "database_name": "avorlune-production", "database_id": "52632cba-6b60-44e9-ae3b-3bc82fdbeb43" }
+  ],
+
+  "env": {
+    // Production branch (main) only.
+    "production": {
+      "vars": { "APP_ENV": "production" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "avorlune-production", "database_id": "52632cba-6b60-44e9-ae3b-3bc82fdbeb43" }
+      ]
+      // R2 private delivery (ADR-008) — add ONLY after owner approval, production env only:
+      // "r2_buckets": [{ "binding": "DELIVERY_BUCKET", "bucket_name": "avorlune-assets" }]
+    },
+    // A1 — preview deployments are deliberately given NO database binding (and no R2).
+    // Bindings are non-inheritable in Pages env blocks, so production data is unreachable.
+    // The app's env guard (app_meta.environment) is a second, independent barrier.
+    // When a dedicated preview D1 exists, bind it here and stamp it with environment='preview'.
+    "preview": {
+      "vars": { "APP_ENV": "preview" }
     }
-  ]
+  }
 }

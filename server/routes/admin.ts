@@ -1,11 +1,14 @@
 import { Hono } from 'hono'
 import type { AppBindings } from '../env'
-import { PROJECT_STATUSES, loginSchema, noteSchema, paymentConfirmSchema, quoteSchema, statusChangeSchema, type ProjectStatus } from '../../shared/domain'
+import { PROJECT_STATUSES, costSchema, loginSchema, noteSchema, paymentConfirmSchema, quoteSchema, statusChangeSchema, type ProjectStatus } from '../../shared/domain'
 import { ApiError, clientIp, newId, nowIso, ok, parseJson } from '../lib/http'
 import { enforceRateLimit } from '../lib/rateLimit'
 import { safeEqual, verifyPassword } from '../lib/crypto'
 import { signProjectToken } from '../lib/projectToken'
-import { createSession, destroySession, loadSession, requireStaff, upsertConfiguredAdmin } from '../middleware/auth'
+import { createSession, destroyAllSessions, destroySession, loadSession, requireStaff, upsertConfiguredAdmin } from '../middleware/auth'
+import { MAX_ASSET_BYTES, UPLOAD_KINDS, UPLOAD_STATUSES, getProjectAsset, publicAsset, storeAsset, streamAsset, type AssetRow, type UploadKind } from '../domain/assets'
+import { deliveryEnabled } from '../domain/assets'
+import { logEvent } from '../lib/log'
 import { assertTransitionAllowed, requireProject, transition } from '../domain/projects'
 import { eventStmt } from '../domain/events'
 
@@ -13,14 +16,21 @@ export const adminRoutes = new Hono<AppBindings>()
 
 // ---------- Auth ----------
 adminRoutes.post('/auth/login', async (c) => {
+  // B1 — layered throttling: per trusted client IP, per target account, and a global ceiling
+  // so distributed attempts from many IPs are still bounded.
   await enforceRateLimit(c.env.DB, 'login', clientIp(c), 10, 900)
+  await enforceRateLimit(c.env.DB, 'login-global', 'all', 100, 900)
   const { email, password } = await parseJson(c, loginSchema)
+  await enforceRateLimit(c.env.DB, 'login-account', email, 20, 900)
   const cfgEmail = (c.env.ADMIN_EMAIL ?? '').trim().toLowerCase()
   const cfgHash = c.env.ADMIN_PASSWORD_HASH ?? ''
   if (!cfgEmail || !cfgHash) throw new ApiError(503, 'NOT_CONFIGURED', 'Akun admin belum dikonfigurasi')
   // Always run the KDF to keep timing similar for wrong emails.
   const passOk = await verifyPassword(password, cfgHash)
-  if (!safeEqual(email, cfgEmail) || !passOk) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Email atau kata sandi salah')
+  if (!safeEqual(email, cfgEmail) || !passOk) {
+    logEvent('warn', 'admin_login_failed', { requestId: c.get('requestId') })
+    throw new ApiError(401, 'INVALID_CREDENTIALS', 'Email atau kata sandi salah')
+  }
   const userId = await upsertConfiguredAdmin(c.env.DB, cfgEmail)
   const session = await createSession(c, userId)
   return ok(c, { email: cfgEmail, role: 'admin', csrfToken: session.csrfToken, expiresAt: session.expiresAt })
@@ -35,6 +45,13 @@ adminRoutes.get('/auth/me', async (c) => {
 adminRoutes.post('/auth/logout', requireStaff, async (c) => {
   await destroySession(c)
   return ok(c, { loggedOut: true })
+})
+
+/** B1 — revoke every session of this admin (e.g. after a suspected leak or a lost device). */
+adminRoutes.post('/auth/logout-all', requireStaff, async (c) => {
+  await destroyAllSessions(c, c.get('user')!.id)
+  logEvent('info', 'admin_sessions_revoked', { requestId: c.get('requestId') })
+  return ok(c, { loggedOut: true, allSessions: true })
 })
 
 // ---------- Projects ----------
@@ -74,15 +91,33 @@ admin.get('/projects', async (c) => {
 admin.get('/projects/:id', async (c) => {
   const db = c.env.DB
   const p = await requireProject(db, c.req.param('id'))
-  const [quotes, payments, feedback, events] = await Promise.all([
+  const [quotes, payments, feedback, events, assets, costs] = await Promise.all([
     db.prepare('SELECT * FROM quotes WHERE project_id = ?1 ORDER BY created_at DESC').bind(p.id).all(),
     db.prepare('SELECT id, amount_minor, currency, method, provider_reference, status, confirmed_by, confirmed_at, created_at FROM payments WHERE project_id = ?1 ORDER BY created_at DESC').bind(p.id).all(),
     db.prepare('SELECT * FROM feedback WHERE project_id = ?1 ORDER BY created_at DESC').bind(p.id).all(),
-    db.prepare(`SELECT e.*, u.email AS actor_email FROM project_events e LEFT JOIN users u ON u.id = e.actor_user_id WHERE e.project_id = ?1 ORDER BY e.created_at DESC`).bind(p.id).all(),
+    db.prepare(`SELECT e.*, u.email AS actor_email FROM project_events e LEFT JOIN users u ON u.id = e.actor_user_id WHERE e.project_id = ?1 ORDER BY e.created_at DESC LIMIT 500`).bind(p.id).all(),
+    db.prepare('SELECT * FROM assets WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 200').bind(p.id).all<AssetRow>(),
+    db.prepare('SELECT id, kind, amount_minor, minutes, note, created_at FROM project_costs WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 500').bind(p.id).all<{ kind: string; amount_minor: number; minutes: number }>(),
   ])
   const { access_token_version: _v, ...safe } = p
   void _v
+  const costRows = costs.results ?? []
+  const revenue = (payments.results as { amount_minor: number; status: string }[] ?? []).filter((x) => ['manually_confirmed', 'paid'].includes(x.status)).reduce((a, b) => a + b.amount_minor, 0)
+  const directCost = costRows.filter((x) => x.kind !== 'labor' && x.kind !== 'refund').reduce((a, b) => a + b.amount_minor, 0)
+  const refunds = costRows.filter((x) => x.kind === 'refund').reduce((a, b) => a + b.amount_minor, 0)
+  const laborCost = costRows.filter((x) => x.kind === 'labor').reduce((a, b) => a + b.amount_minor, 0)
   return ok(c, {
+    deliveryEnabled: deliveryEnabled(c.env),
+    assets: (assets.results ?? []).map(publicAsset),
+    costs: costRows,
+    economics: {
+      revenueConfirmed: revenue,
+      directCost,
+      laborCost,
+      refunds,
+      laborMinutes: costRows.reduce((a, b) => a + b.minutes, 0),
+      grossContribution: revenue - refunds - directCost - laborCost,
+    },
     project: { ...safe, brief: JSON.parse(p.brief_json) },
     quotes: (quotes.results ?? []).map((q) => ({ ...q, scope: JSON.parse(String((q as { scope_json: string }).scope_json)) })),
     payments: payments.results ?? [],
@@ -95,9 +130,15 @@ admin.patch('/projects/:id/status', async (c) => {
   const db = c.env.DB
   const user = c.get('user')!
   const p = await requireProject(db, c.req.param('id'))
-  const { toStatus, reason } = await parseJson(c, statusChangeSchema)
-  await assertTransitionAllowed(db, p, toStatus as ProjectStatus, reason)
-  await transition(db, p, toStatus as ProjectStatus, { type: 'admin', userId: user.id }, reason ? { reason } : {})
+  const { toStatus, reason, assetId } = await parseJson(c, statusChangeSchema)
+  await assertTransitionAllowed(db, p, toStatus as ProjectStatus, reason, c.env, assetId)
+  const meta: Record<string, unknown> = reason ? { reason } : {}
+  if (toStatus === 'approved') meta.assetId = assetId
+  await transition(db, p, toStatus as ProjectStatus, { type: 'admin', userId: user.id }, meta, (stamp) =>
+    toStatus === 'approved'
+      ? [db.prepare(`UPDATE projects SET approved_asset_id = ?1 WHERE id = ?2 AND status = 'approved' AND updated_at = ?3`).bind(assetId, p.id, stamp)]
+      : [],
+  )
   return ok(c, { id: p.id, status: toStatus })
 })
 
@@ -179,13 +220,80 @@ admin.post('/projects/:id/access-link', async (c) => {
 admin.get('/projects/:id/export', async (c) => {
   const db = c.env.DB
   const p = await requireProject(db, c.req.param('id'))
-  const [quotes, payments, feedback, events] = await Promise.all(
-    ['quotes', 'payments', 'feedback', 'project_events'].map((t) => db.prepare(`SELECT * FROM ${t} WHERE project_id = ?1 ORDER BY created_at ASC`).bind(p.id).all()),
+  await enforceRateLimit(db, 'export', c.get('user')!.id, 30, 3600)
+  const LIMIT = 5000 // bounded export
+  const [quotes, payments, feedback, events, assets, costs] = await Promise.all(
+    ['quotes', 'payments', 'feedback', 'project_events', 'assets', 'project_costs'].map((t) => db.prepare(`SELECT * FROM ${t} WHERE project_id = ?1 ORDER BY created_at ASC LIMIT ${LIMIT}`).bind(p.id).all()),
   )
+  // B3 — audit every export; never include storage keys, token versions or session data.
+  await eventStmt(db, { projectId: p.id, actorUserId: c.get('user')!.id, actorType: 'admin', eventType: 'project_exported', metadata: {} }).run()
   const { access_token_version: _v, ...safe } = p
   void _v
   c.header('content-disposition', `attachment; filename="${p.public_reference}.json"`)
-  return ok(c, { exportedAt: nowIso(), project: { ...safe, brief: JSON.parse(p.brief_json) }, quotes: quotes.results, payments: payments.results, feedback: feedback.results, events: events.results })
+  return ok(c, {
+    exportedAt: nowIso(),
+    limitPerSection: LIMIT,
+    project: { ...safe, brief: JSON.parse(p.brief_json) },
+    quotes: quotes.results, payments: payments.results, feedback: feedback.results, events: events.results,
+    assets: (assets.results as unknown as AssetRow[]).map(publicAsset),
+    costs: costs.results,
+  })
+})
+
+// ---------- A3: private deliverables (enabled only when the DELIVERY_BUCKET bucket is bound) ----------
+admin.post('/projects/:id/assets', async (c) => {
+  const db = c.env.DB
+  const user = c.get('user')!
+  const p = await requireProject(db, c.req.param('id'))
+  const kind = c.req.query('kind') as UploadKind
+  if (!(UPLOAD_KINDS as readonly string[]).includes(kind)) throw new ApiError(422, 'VALIDATION_ERROR', 'kind harus preview atau final')
+  if (!(UPLOAD_STATUSES as readonly string[]).includes(p.status)) throw new ApiError(409, 'INVALID_STATE', 'Unggah hanya pada tahap produksi/review/revisi')
+  if (!deliveryEnabled(c.env)) throw new ApiError(503, 'DELIVERY_DISABLED', 'Pengiriman file privat belum aktif di lingkungan ini.')
+  const declared = Number(c.req.header('content-length') ?? '0')
+  if (!declared) throw new ApiError(411, 'LENGTH_REQUIRED', 'Content-Length wajib')
+  if (declared > MAX_ASSET_BYTES) throw new ApiError(413, 'FILE_TOO_LARGE', `Ukuran maksimal ${MAX_ASSET_BYTES / 1024 / 1024} MB`)
+  const body = new Uint8Array(await c.req.arrayBuffer())
+  const filename = (c.req.query('filename') ?? '').slice(0, 120)
+  const saved = await storeAsset(c.env, db, p.id, kind, body, filename, user.id)
+  await eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'asset_uploaded', metadata: { assetId: saved.id, kind, version: saved.version, sizeBytes: saved.sizeBytes, mimeType: saved.mimeType } }).run()
+  return ok(c, saved, 201)
+})
+
+admin.get('/projects/:id/assets/:assetId/download', async (c) => {
+  const db = c.env.DB
+  const p = await requireProject(db, c.req.param('id'))
+  const a = await getProjectAsset(db, p.id, c.req.param('assetId'))
+  if (!a) throw new ApiError(404, 'NOT_FOUND', 'File tidak tersedia')
+  return streamAsset(c.env, a)
+})
+
+admin.post('/projects/:id/assets/:assetId/revoke', async (c) => {
+  const db = c.env.DB
+  const user = c.get('user')!
+  const p = await requireProject(db, c.req.param('id'))
+  const { note } = await parseJson(c, noteSchema)
+  const a = await getProjectAsset(db, p.id, c.req.param('assetId'))
+  if (!a || a.status !== 'active') throw new ApiError(404, 'NOT_FOUND', 'File tidak tersedia')
+  await db.batch([
+    db.prepare(`UPDATE assets SET status = 'revoked', revoked_at = ?1, revoked_by = ?2 WHERE id = ?3 AND project_id = ?4 AND status = 'active'`).bind(nowIso(), user.id, a.id, p.id),
+    eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'asset_revoked', metadata: { assetId: a.id, reason: note } }),
+  ])
+  return ok(c, { id: a.id, status: 'revoked' })
+})
+
+// ---------- D4: per-project cost / time ledger ----------
+admin.post('/projects/:id/costs', async (c) => {
+  const db = c.env.DB
+  const user = c.get('user')!
+  const p = await requireProject(db, c.req.param('id'))
+  const input = await parseJson(c, costSchema)
+  const id = newId()
+  await db.batch([
+    db.prepare('INSERT INTO project_costs (id, project_id, kind, amount_minor, minutes, note, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)')
+      .bind(id, p.id, input.kind, input.amountMinor, input.minutes, input.note ?? null, user.id, nowIso()),
+    eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'cost_recorded', metadata: { costId: id, kind: input.kind, amountMinor: input.amountMinor, minutes: input.minutes } }),
+  ])
+  return ok(c, { id }, 201)
 })
 
 adminRoutes.route('/', admin)

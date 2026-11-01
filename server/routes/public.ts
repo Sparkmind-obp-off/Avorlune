@@ -3,7 +3,7 @@ import type { AppBindings } from '../env'
 import { inquirySchema, generateReference } from '../../shared/domain'
 import { SERVICES, PORTFOLIO } from '../../shared/catalogue'
 import { ApiError, clientIp, newId, nowIso, ok, parseJson } from '../lib/http'
-import { enforceRateLimit } from '../lib/rateLimit'
+import { enforceRateLimit, pruneOperationalData } from '../lib/rateLimit'
 import { randomBytes, sha256Hex } from '../lib/crypto'
 import { eventStmt } from '../domain/events'
 
@@ -67,6 +67,7 @@ publicRoutes.post('/inquiries', async (c) => {
         stmts.push(db.prepare("INSERT INTO idempotency_keys (key_hash, scope, project_id, created_at) VALUES (?1, 'inquiry', ?2, ?3)").bind(idemHash, id, now))
       }
       await db.batch(stmts)
+      await pruneOperationalData(db)
       return ok(c, { reference, duplicate: false }, 201)
     } catch (err) {
       const msg = String((err as Error)?.message ?? err)

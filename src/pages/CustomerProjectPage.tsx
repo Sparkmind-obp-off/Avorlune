@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { Alert } from '../components/Field'
-import { api, ApiFailure, formatDate } from '../lib/api'
+import { api, ApiFailure, downloadFile, formatBytes, formatDate, type AssetInfo } from '../lib/api'
 import { SERVICE_LABELS, formatIDR, type ProjectStatus, type ServiceType } from '../../shared/domain'
 
 interface CustomerProject {
@@ -10,6 +10,9 @@ interface CustomerProject {
   quote: null | { id: string; status: string; amountMinor: number; deliverables: string[]; notes: string | null; includedRevisionRounds: number; estimatedDeliveryAt: string | null }
   timeline: { status: string; label: string; at: string }[]
   feedback: { id: string; message: string; revision_round: number; within_scope: number; created_at: string }[]
+  deliveryEnabled: boolean
+  assets: AssetInfo[]
+  approvedAssetId: string | null
   actions: { canDecideQuote: boolean; canSubmitFeedback: boolean; canApprove: boolean }
 }
 
@@ -38,6 +41,7 @@ export function CustomerProjectPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [feedback, setFeedback] = useState('')
   const [busy, setBusy] = useState(false)
+  const [approveId, setApproveId] = useState('')
 
   const load = useCallback(async () => {
     if (!token) { setLoading(false); setError('Tautan akses tidak ditemukan. Gunakan tautan privat yang dikirim oleh tim AVORLUNE.'); return }
@@ -70,6 +74,11 @@ export function CustomerProjectPage() {
   if (!data) return null
 
   const q = data.quote
+  const finals = data.assets.filter((a) => a.kind === 'final')
+  const dl = async (a: AssetInfo) => {
+    try { await downloadFile(`/projects/${encodeURIComponent(reference)}/assets/${a.id}/download`, a.filename ?? 'avorlune-asset', token) }
+    catch (e) { setError(e instanceof ApiFailure ? e.body.message : 'Unduhan gagal') }
+  }
   return (
     <section className="section">
       <div className="container narrow">
@@ -101,7 +110,26 @@ export function CustomerProjectPage() {
           </article>
         )}
 
-        {(data.actions.canSubmitFeedback || data.actions.canApprove) && (
+        {data.assets.length > 0 && (
+          <article className="panel" id="files-panel">
+            <h2 className="h4">File proyek</h2>
+            <ul className="asset-list">
+              {data.assets.map((a) => (
+                <li key={a.id}>
+                  <div>
+                    <strong>{a.filename}</strong> <span className={`tag t-${a.kind}`}>{a.kind === 'final' ? 'Final' : 'Preview'} v{a.version}</span>
+                    {data.approvedAssetId === a.id && <span className="tag t-accepted">Disetujui</span>}
+                    <div className="small muted">{formatBytes(a.sizeBytes)} · {formatDate(a.createdAt, true)}</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => dl(a)}>Unduh</button>
+                </li>
+              ))}
+            </ul>
+            <p className="small muted">File bersifat privat dan hanya dapat diunduh melalui tautan proyek ini.</p>
+          </article>
+        )}
+
+        {data.actions.canSubmitFeedback && (
           <article className="panel" id="review-panel">
             <h2 className="h4">Review</h2>
             <p className="muted">
@@ -113,9 +141,29 @@ export function CustomerProjectPage() {
               <textarea id="feedback" rows={5} value={feedback} onChange={(e) => setFeedback(e.target.value)} maxLength={4000} placeholder="Tuliskan semua catatan revisi dalam satu pesan." />
               <div className="btn-row">
                 <button type="submit" className="btn btn-ghost" disabled={busy || feedback.trim().length < 5}>Kirim revisi</button>
-                <button type="button" className="btn btn-primary" disabled={busy} onClick={() => confirm('Setujui hasil akhir? Persetujuan akan dicatat.') && act('/approval', {}, 'Terima kasih — persetujuan Anda telah dicatat.')}>Setujui hasil</button>
               </div>
             </form>
+            <div className="approve-box">
+              <h3 className="h5">Persetujuan akhir</h3>
+              {data.actions.canApprove ? (
+                <>
+                  <label htmlFor="approve-asset" className="block-label">File final yang Anda setujui</label>
+                  <select id="approve-asset" value={approveId} onChange={(e) => setApproveId(e.target.value)}>
+                    <option value="">Pilih file final…</option>
+                    {finals.map((a) => <option key={a.id} value={a.id}>{a.filename} (v{a.version})</option>)}
+                  </select>
+                  <div className="btn-row">
+                    <button type="button" className="btn btn-primary" disabled={busy || !approveId} onClick={() => confirm('Setujui file final ini? Persetujuan akan dicatat.') && act('/approval', { assetId: approveId }, 'Terima kasih — persetujuan Anda telah dicatat.')}>Setujui file final</button>
+                  </div>
+                </>
+              ) : (
+                <p className="small muted">
+                  {data.deliveryEnabled
+                    ? 'Persetujuan tersedia setelah file final diunggah oleh tim.'
+                    : 'Persetujuan akhir melalui portal belum aktif. Tim kami akan mengirim file final melalui kanal privat dan mengonfirmasi persetujuan bersama Anda secara tertulis.'}
+                </p>
+              )}
+            </div>
           </article>
         )}
 

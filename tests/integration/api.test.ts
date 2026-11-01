@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ADMIN_EMAIL, loginAdmin, setup, validInquiry } from '../helpers/app'
+import { PNG } from '../helpers/store'
 
 type Ctx = Awaited<ReturnType<typeof setup>>
 let ctx: Ctx
@@ -210,7 +211,7 @@ describe('customer access isolation', () => {
     const link = await ctx.call('POST', `/admin/projects/${a.id}/access-link`, { json: {}, headers: auth })
     const t = link.body.data.url.split('#t=')[1]
     // Approval outside customer_review is refused.
-    expect((await ctx.call('POST', `/projects/${a.reference}/approval`, { json: {}, headers: { 'x-project-token': t } })).status).toBe(409)
+    expect((await ctx.call('POST', `/projects/${a.reference}/approval`, { json: { assetId: crypto.randomUUID() }, headers: { 'x-project-token': t } })).status).toBe(409)
     // Customer token cannot reach admin endpoints.
     expect((await ctx.call('PATCH', `/admin/projects/${a.id}/status`, { json: { toStatus: 'delivered' }, headers: { 'x-project-token': t } })).status).toBe(401)
     expect((await ctx.call('POST', `/admin/projects/${a.id}/payments/confirm`, { json: { amountMinor: 1, method: 'x' }, headers: { 'x-project-token': t } })).status).toBe(401)
@@ -219,6 +220,7 @@ describe('customer access isolation', () => {
 
 describe('critical end-to-end scenario (docs/15)', () => {
   it('inquiry → quote → payment → production → review → revision → approval → delivered, fully audited', async () => {
+    ctx = await setup({ assets: true })
     const { id, reference } = await createInquiry()
     const { auth } = await loginAdmin(ctx.call)
     const patch = async (toStatus: string, reason?: string) => {
@@ -259,9 +261,12 @@ describe('critical end-to-end scenario (docs/15)', () => {
     expect(fb2.body.data).toMatchObject({ revisionRound: 2, withinScope: false })
 
     await patch('producing')
+    const fin = await ctx.upload(id, 'final', PNG, auth, 'key-visual-final.png')
+    expect(fin.status).toBe(201)
     await patch('internal_review')
     await patch('customer_review')
-    expect((await ctx.call('POST', `/projects/${reference}/approval`, { json: {}, headers: h })).status).toBe(200)
+    expect((await ctx.call('POST', `/projects/${reference}/approval`, { json: {}, headers: h })).status).toBe(422)
+    expect((await ctx.call('POST', `/projects/${reference}/approval`, { json: { assetId: fin.body.data.id }, headers: h })).status).toBe(200)
     await patch('delivered')
 
     const detail = await ctx.call('GET', `/admin/projects/${id}`, { headers: auth })
@@ -278,7 +283,7 @@ describe('critical end-to-end scenario (docs/15)', () => {
 
     const exp = await ctx.call('GET', `/admin/projects/${id}/export`, { headers: auth })
     expect(exp.status).toBe(200)
-    expect(exp.body.data.events.length).toBe(types.length)
+    expect(exp.body.data.events.length).toBe(types.length) // export audit event is written after the snapshot
   })
 
   it('a stale concurrent transition writes nothing', async () => {

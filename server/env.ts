@@ -1,5 +1,15 @@
+/** Minimal R2-compatible surface used by the asset store (lets tests use an in-memory fake). */
+export interface ObjectStore {
+  put(key: string, value: ArrayBuffer | Uint8Array, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> }): Promise<unknown>
+  get(key: string): Promise<{ body: ReadableStream; size: number; httpMetadata?: { contentType?: string } } | null>
+  head(key: string): Promise<{ size: number } | null>
+  delete(key: string): Promise<void>
+}
+
 export interface Env {
-  DB: D1Database
+  DB?: D1Database
+  /** Private R2 bucket. Absent = private delivery disabled (owner approval pending, ADR-008). */
+  DELIVERY_BUCKET?: ObjectStore
   APP_ENV?: string
   LINK_SIGNING_SECRET?: string
   ADMIN_EMAIL?: string
@@ -9,11 +19,11 @@ export interface Env {
 export interface SessionUser {
   id: string
   email: string
-  role: 'admin' | 'producer'
+  role: 'admin'
   csrfToken: string
 }
 
 export type AppBindings = {
-  Bindings: Env
+  Bindings: Env & { DB: D1Database }
   Variables: { requestId: string; user?: SessionUser }
 }

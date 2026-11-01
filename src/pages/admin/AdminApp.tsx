@@ -25,6 +25,11 @@ export function AdminApp() {
     try { await api('/admin/auth/logout', { method: 'POST', json: {} }) } catch { /* ignore */ }
     setCsrf(null); setMe(null)
   }, [])
+  const logoutAll = useCallback(async () => {
+    if (!confirm('Keluarkan SEMUA sesi admin di semua perangkat?')) return
+    try { await api('/admin/auth/logout-all', { method: 'POST', json: {} }) } catch { /* ignore */ }
+    setCsrf(null); setMe(null)
+  }, [])
 
   if (checking) return <div className="admin-shell"><p className="muted pad" role="status">Memeriksa sesi…</p></div>
   if (!me) return <AdminLogin onLogin={(m) => { setCsrf(m.csrfToken); setMe(m) }} />
@@ -36,6 +41,7 @@ export function AdminApp() {
           <Link to="/admin" className="brand-link"><Logo /> <span className="admin-badge">Studio</span></Link>
           <div className="admin-user">
             <span className="small muted">{me.email}</span>
+            <button className="btn btn-ghost btn-sm" onClick={logoutAll} title="Cabut semua sesi">Keluar semua</button>
             <button className="btn btn-ghost btn-sm" onClick={logout}>Keluar</button>
           </div>
         </header>
