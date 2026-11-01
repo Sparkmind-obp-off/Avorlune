@@ -1,5 +1,7 @@
 # 11 — MVP Backlog & Acceptance Criteria
 
+> **Status note (2026-11-01):** P0 Delivery items are implemented in code (upload, preview/final distinction, authorized download, approval bound to a final asset) but **inactive in production** until an R2 bucket is approved and bound (docs/41). Treat Delivery as *open* for launch purposes. Live status: docs/37 and docs/39.
+
 Priorities: P0 required for usable MVP; P1 valuable next; P2 deferred.
 
 ## P0 — Public experience

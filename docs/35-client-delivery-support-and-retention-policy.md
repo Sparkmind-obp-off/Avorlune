@@ -1,5 +1,7 @@
 # Client Delivery, Support, and Retention Policy
 
+> **Retention periods are PROPOSED** — not approved by the owner or reviewed by counsel. No automated deletion of customer records is implemented.
+
 **Status:** Draft internal policy; align with final contract and privacy notice before public use.  
 **Purpose:** Define a predictable handoff and avoid indefinite retention of client materials.
 

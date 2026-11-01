@@ -1,5 +1,7 @@
 # Customer Discovery and Validation Plan
 
+> **PLAN / HYPOTHESES — no interviews or pilots have been recorded as completed.**
+
 **Status:** Prepared; execution pending.  
 **Purpose:** Validate whether AVORLUNE's AI image/video production offer solves a real, paid customer problem before spending on infrastructure or scraping.
 

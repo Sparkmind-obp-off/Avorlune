@@ -1,5 +1,7 @@
 # 05 — Technical Architecture
 
+> **Status note (2026-11-01):** Target architecture. As implemented: React SPA + Hono on Cloudflare **Pages Functions** (ADR-006), D1 in production. **R2 private storage is coded but not provisioned** (owner approval pending, ADR-008; see docs/41). Preview deployments have no database (docs/40).
+
 ## Architecture goal
 Deliver a secure, inexpensive, maintainable service portal. Keep AI provider integrations optional and replaceable. Start with a modular monolith, not microservices.
 

@@ -1,5 +1,7 @@
 # Apify Ingestion Workflow
 
+> **PROPOSAL — not implemented.** No Apify token, connector, migration or paid run exists. Any run requires explicit owner budget approval.
+
 Status: design only. No production integration is active.
 
 ## Pipeline

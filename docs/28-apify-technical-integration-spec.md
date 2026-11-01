@@ -1,5 +1,7 @@
 # Apify Technical Integration Specification
 
+> **PROPOSAL — not implemented in the application.**
+
 Status: proposed; no Apify API token or production connector configured.
 
 ## Architecture

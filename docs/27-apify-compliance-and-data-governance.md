@@ -1,5 +1,7 @@
 # Apify Compliance & Data Governance
 
+> **PROPOSAL — not implemented.** No Apify token, connector, migration or paid run exists. Any run requires explicit owner budget approval.
+
 Status: operational policy draft; obtain legal review where needed.
 
 ## Allowed posture

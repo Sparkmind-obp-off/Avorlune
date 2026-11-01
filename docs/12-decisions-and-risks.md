@@ -40,6 +40,16 @@
 **Reason:** enabling R2 on the Cloudflare account requires owner approval (billing method on file) per the Rp0/minimal-spend principle.
 **Consequence:** docs/11 "P0 — Delivery" asset items remain open and are a launch blocker.
 
+### ADR-009: Environment identity marker + binding-less preview (2026-11-01)
+**Decision:** each database is stamped `app_meta.environment`; the API refuses any request whose `APP_ENV` differs from the stamp. Preview deployments get no D1/R2 binding until a dedicated preview DB exists.
+**Reason:** close G0.3 without paid resources; the account hit its D1 limit.
+**Consequence:** preview URLs show the static site, and their API returns 503. A misbinding fails closed.
+
+### ADR-010: Approval bound to a stored final asset; R2 binding named DELIVERY_BUCKET (2026-11-01)
+**Decision:** approval requires a specific active final asset whose private object exists. The private bucket binding is `DELIVERY_BUCKET`, validated by duck-typing.
+**Reason:** close G0.2. Cloudflare Pages already injects a static-asset Fetcher named `ASSETS`, which collided with the first binding name during local testing.
+**Consequence:** without R2, portal approval is impossible by design; the pilot uses the manual procedure in docs/41.
+
 ## Open assumptions
 - First vertical/customer segment is not yet validated.
 - Pricing and package structure are not yet validated.

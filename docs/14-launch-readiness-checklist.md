@@ -1,5 +1,7 @@
 # 14 — Launch Readiness Checklist
 
+> **Status (2026-11-01): NO-GO for unrestricted launch.** Boxes are ticked only with evidence recorded in docs/39. See docs/37 §10 for gate status.
+
 A checklist for deciding whether AVORLUNE can safely accept real customer projects through the portal.
 
 ## Brand and public claims

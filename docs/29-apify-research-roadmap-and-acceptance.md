@@ -1,5 +1,7 @@
 # Apify Research Roadmap & Acceptance Criteria
 
+> **PROPOSAL — not implemented.** No Apify token, connector, migration or paid run exists. Any run requires explicit owner budget approval.
+
 ## Phase 0 — preparation
 - [x] Discover candidate Actors for TikTok, Instagram and YouTube.
 - [x] Inspect candidate pricing and input schemas at discovery stage.

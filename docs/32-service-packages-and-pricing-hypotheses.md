@@ -1,5 +1,7 @@
 # Service Packages and Pricing Hypotheses
 
+> **HYPOTHESES — not validated, not published.** The public site shows no prices.
+
 **Status:** Draft for validation; no public prices approved.  
 **Purpose:** Define bounded outcomes without promising capabilities or rights that have not been verified.
 

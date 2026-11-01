@@ -1,5 +1,7 @@
 # Research Scoring & Insight Framework
 
+> **PROPOSAL — not implemented.** No Apify token, connector, migration or paid run exists. Any run requires explicit owner budget approval.
+
 ## Opportunity score (0–100)
 Score each dimension 0–5, then calculate score / 5 × weight:
 - Explicit buying intent: 30%

@@ -18,37 +18,42 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 - **API base:** https://avorlune.pages.dev/api/v1
 - **GitHub:** https://github.com/Sparkmind-obp-off/Avorlune
 
-## Implementation status (verified 2026-10-31)
+## Implementation status (verified 2026-11-01)
+
+**Release status:** Gate 0 (controlled pilot) **conditional** on owner approvals · Gate 1/2 **NO-GO**. Details: `docs/37` §10, evidence: `docs/39`.
 
 ### Done
 | Area | What exists |
 |---|---|
-| Public site | Home, Services (+ detail per service), Work (honest empty state), How it works, About, Start a Project, Contact, Privacy (draft), Terms (draft), 404. Responsive, keyboard accessible, reduced-motion aware. |
-| Inquiry pipeline | Guided brief form with progressive disclosure; client + server zod validation; consent + rights confirmation; honeypot + minimum fill time; per-IP D1 rate limit (IPs hashed); `Idempotency-Key` dedupe; non-sequential reference `AVL-XXXX-XXXX`; audit event. |
-| Admin | Login from Cloudflare secrets (PBKDF2), hashed session in D1, `HttpOnly; Secure; SameSite=Strict` cookie, CSRF token + same-origin check. Inbox with status filter, search, pagination. Project detail: brief, quotes (draft/sent), manual payment confirmation, server-enforced status transitions, internal notes, audit history, JSON export. |
-| Lifecycle rules | Transition table from `docs/07`; `quoted` requires a sent quote; `queued` requires confirmed payment **or** a written exception reason; `cancelled`/admin-set `approved` require a reason; atomic compare-and-set + audit event in one D1 batch (stale writes are rejected). |
-| Customer view | `/p/:reference#t=<token>` — HMAC-signed, 30-day, revocable token (token is moved out of the URL into sessionStorage). Customer can see status/timeline/quote, accept or reject a sent quote, submit consolidated feedback (revision round counted against included rounds), and approve. |
-| Security headers | CSP, HSTS, X-Frame-Options DENY, nosniff, no-referrer on customer links, `noindex` on `/admin` and `/p/*`. API responses are `no-store`. |
-| Tests | 42 Vitest tests: domain rules, crypto/token, and API integration against a real SQLite-backed D1 shim (auth, CSRF, cross-project isolation, revocation, rate limit, idempotency, docs/15 end-to-end scenario, concurrent transition). |
+| Public site | Home, Services (+ detail), Work (honest empty state), How it works, About, Start a Project, Contact, Privacy & Terms (**DRAFT**), 404. Responsive, accessible, reduced-motion aware. |
+| Inquiry pipeline | Client + server zod validation; consent + rights confirmation; honeypot + min fill time; D1 rate limit (hashed IPs, trusted `cf-connecting-ip` only); `Idempotency-Key`; reference `AVL-XXXX-XXXX`; audit event. |
+| Admin (single-admin mode) | Login from Cloudflare secrets (PBKDF2); hashed session bound to the credential fingerprint (rotation revokes all sessions); `HttpOnly; Secure; SameSite=Strict`; CSRF + Origin + Sec-Fetch-Site checks; layered login throttling (IP/account/global); **Keluar semua**. Inbox, quotes, manual payment, guarded status transitions, internal notes, audit history, cost ledger, bounded + audited JSON export. |
+| Final approval invariant | Customer and staff approval require a specific active **final** asset of the same project whose private object exists; `approved_asset_id` recorded; `delivered` re-checks. **Disabled while no private bucket is bound.** |
+| Private delivery (code) | Upload/list/download/revoke behind an R2 binding `DELIVERY_BUCKET` — magic-byte allowlist, 25 MB cap, random keys, header-auth download, `private, no-store`, audit. **Not live: R2 not provisioned (owner approval pending).** |
+| Environment isolation | Preview deployments have no D1/R2 binding; runtime guard requires `app_meta.environment == APP_ENV`; static config test. Verified live (preview API → 503). |
+| Customer view | `/p/:reference#t=<token>` — HMAC-signed, 30-day, revocable; status, timeline, quote decision, consolidated feedback, private file list/download and final approval (when delivery is enabled). |
+| Tests | 72 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
 
-### Not yet implemented (deliberately deferred)
-- **File upload / private asset delivery (R2).** No R2 bucket created yet: R2 requires enabling it on the Cloudflare account (payment method on file) — needs explicit owner approval. Previews/finals are currently shared through an external private channel; the portal records feedback and approval.
-- **Notifications** (email/WhatsApp). No provider chosen; confirmation copy says so truthfully.
-- **Payment gateway.** Only manual payment confirmation by an admin (actor + timestamp recorded).
-- **Multiple staff accounts / roles.** One admin from secrets; `producer` role exists in schema only.
-- **AI provider adapters.** None — by design until API, pricing, data policy and commercial rights are verified (`docs/08`).
-- **Portfolio items.** Empty until rights-cleared samples exist.
-- Retention/deletion automation, backups runbook, final legal copy (see `docs/14`).
+### Not yet implemented / blocked
+- **R2 private delivery live** — needs owner approval (R2 billing). Interim manual private delivery: `docs/41`.
+- **Dedicated preview D1** — account D1 limit reached; preview runs without a DB (`docs/40`).
+- **Legal approval** — Privacy/Terms are drafts pending owner + Indonesian counsel review.
+- Notifications and payment gateway — manual procedure `docs/44`.
+- Production restore drill — local synthetic restore verified (`docs/42`).
+- Multi-staff accounts, AI provider adapters, research/Apify module, portfolio, validated pricing, brand clearance.
+
+### Runbooks
+`docs/40` environment isolation · `docs/41` private delivery & approval · `docs/42` backup & restore · `docs/43` secrets & incidents · `docs/44` manual operations & staff access.
 
 ## API (summary)
 Public: `GET /health`, `GET /services`, `GET /portfolio`, `POST /inquiries`
-Customer (header `x-project-token`): `GET /projects/:reference`, `POST /projects/:reference/quote/decision`, `POST /projects/:reference/feedback`, `POST /projects/:reference/approval`
-Admin (session cookie + `x-csrf-token`): `POST /admin/auth/login`, `GET /admin/auth/me`, `POST /admin/auth/logout`, `GET /admin/projects`, `GET /admin/projects/:id`, `PATCH /admin/projects/:id/status`, `POST /admin/projects/:id/quotes`, `POST /admin/projects/:id/payments/confirm`, `POST /admin/projects/:id/events`, `POST /admin/projects/:id/access-link[?revokePrevious=true]`, `GET /admin/projects/:id/export`
+Customer (header `x-project-token`): `GET /projects/:reference`, `GET /projects/:reference/assets/:assetId/download`, `POST /projects/:reference/quote/decision`, `POST /projects/:reference/feedback`, `POST /projects/:reference/approval` (body `{ assetId }`)
+Admin (session cookie + `x-csrf-token`): `POST /admin/auth/login`, `GET /admin/auth/me`, `POST /admin/auth/logout`, `POST /admin/auth/logout-all`, `POST /admin/projects/:id/assets?kind=`, `GET /admin/projects/:id/assets/:assetId/download`, `POST /admin/projects/:id/assets/:assetId/revoke`, `POST /admin/projects/:id/costs`, `GET /admin/projects`, `GET /admin/projects/:id`, `PATCH /admin/projects/:id/status`, `POST /admin/projects/:id/quotes`, `POST /admin/projects/:id/payments/confirm`, `POST /admin/projects/:id/events`, `POST /admin/projects/:id/access-link[?revokePrevious=true]`, `GET /admin/projects/:id/export`
 
 Responses: `{ data, requestId }` or `{ error: { code, message, details? }, requestId }`.
 
 ## Data architecture
-- **Cloudflare D1** `avorlune-production` — tables: `users`, `projects`, `quotes`, `payments`, `assets` (schema only), `feedback`, `project_events`, plus operational `sessions`, `rate_limits`, `idempotency_keys`. Migration: `migrations/0001_initial_schema.sql`.
+- **Cloudflare D1** `avorlune-production` (stamped `app_meta.environment=production`) — tables: `users`, `projects`, `quotes`, `payments`, `assets` (schema only), `feedback`, `project_events`, plus operational `sessions`, `rate_limits`, `idempotency_keys`, `app_meta`, `project_costs`. Migrations: `0001_initial_schema.sql`, `0002_gap_closure.sql` (additive).
 - Money is stored as integer IDR (`amount_minor`). Audit metadata never contains contact details, brief text or tokens.
 
 ## Admin usage guide
@@ -77,7 +82,7 @@ docs/           Product, architecture and operations blueprint
 npm install
 cp .dev.vars.example .dev.vars            # then fill values
 node scripts/hash-password.mjs '<min 12 chars>'   # → ADMIN_PASSWORD_HASH
-npm run db:migrate:local
+npm run db:migrate:local && npm run db:stamp:local
 npm run build && npx wrangler pages dev dist --ip 0.0.0.0 --port 3000
 npm run check                              # typecheck + lint + tests
 ```
@@ -85,8 +90,9 @@ npm run check                              # typecheck + lint + tests
 ## Deployment (BYOK Cloudflare Pages)
 - Pages project: `avorlune` (production branch `main`). D1 binding `DB` → `avorlune-production`.
 - Secrets (set with `wrangler pages secret put … --project-name avorlune`): `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `LINK_SIGNING_SECRET`. Rotating `LINK_SIGNING_SECRET` invalidates all customer links.
-- Deploy: `npm run db:migrate:prod && npm run deploy`.
-- Preview deployments share the production D1 binding today — **do not use preview URLs with real customer data** until a separate preview database is configured (`docs/05`).
+- Deploy: `npm run db:bookmark:prod && npm run db:migrate:prod && npm run deploy` (deploy runs `npm run check` first).
+- Preview deployments are isolated: no database binding (API returns 503) — see `docs/40`.
+- Before each production migration record a Time Travel bookmark (`npm run db:bookmark:prod`).
 
 ## Principles
 1. Validate demand before paying for infrastructure or API usage.
@@ -99,4 +105,4 @@ npm run check                              # typecheck + lint + tests
 `docs/01` business & brand · `02` PRD · `03` metrics · `04` UX · `05` architecture · `06` data model · `07` API contract · `08` AI workflow · `09` security · `10` roadmap · `11` backlog · `12` decisions & risks · `13` handoff · `14` launch checklist · `15` test strategy · `16` operations · `MASTER-SYSTEM-PROMPT.md`
 
 ## Status
-Portal MVP (Milestones 1–4 of `docs/13`, plus customer feedback/approval from Milestone 5) is deployed. **Not launch-ready for real paid customers** until `docs/14` blockers are resolved: brand/trademark screening, final privacy/terms, retention policy, private asset delivery, notification channel, separate preview database.
+Gap-closure work (docs/38) applied 2026-11-01: G0.2 and G0.3 closed, G0.1 code-complete but not live. **Not launch-ready for unrestricted production.** See `docs/37` §10 and `docs/39`.

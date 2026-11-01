@@ -197,3 +197,29 @@ This review inspected the repository's current source and documents through GitH
 - verify that the deployed Pages version exactly matches the current repository commit.
 
 All such checks must be separately performed before the repository can be certified as production-ready.
+
+---
+
+## 10. Gap closure status — update 2026-11-01
+
+Original audit text above is preserved. The evidence for each row is in docs/39.
+
+| Gap | Status | Evidence / remaining risk |
+|---|---|---|
+| G0.1 Private file delivery | **Code complete, NOT live.** | Fully tested locally against an R2 stand-in. Production has no bucket (needs owner approval/billing). Interim manual private delivery: docs/41. |
+| G0.2 Approval invariant | **Closed.** | Server enforces a specific valid final asset, for customer and staff. Approval is impossible while delivery is disabled. |
+| G0.3 Preview isolation | **Closed (interim control).** | Preview has no DB binding (verified via CF API + live 503); env guard + static test. A dedicated preview D1 is blocked by the account's D1 limit. |
+| G1 Legal drafts | Open | Drafts extended and still labelled DRAFT. Needs owner + counsel approval. |
+| G1 Notifications | Open (manual) | docs/44 manual procedure; disclosed in UI. |
+| G1 Payments | Open (manual) | Manual confirmation only, with actor + reference; customers cannot self-assert. |
+| G1 Staff roles | Closed for pilot | Single-admin mode is enforced server-side; non-admin sessions are rejected (tested). |
+| G1 Backup/restore | Partially closed | Local synthetic restore verified; production bookmark recorded; production restore drill pending. |
+| G2 Segment/pricing/portfolio/brand/AI providers/Apify | Open | Labelled as hypotheses/proposals; nothing fabricated; no paid runs. |
+| G2 Cost tracking | Closed | `project_costs` ledger + gross contribution. |
+| G2 Link edge cases | Closed locally | Live adversarial test needs a non-production DB. |
+| Security hardening items 1–7 | Mostly closed | Trusted IP, layered login limits, session rotation/revocation, export/log redaction, dependency audit (0 vulns) done. Live CSP/cookie checks done. Monitoring/alerting not set up. |
+
+### Release decision (2026-11-01)
+- **Gate 0 (safe controlled pilot): CONDITIONAL.** Met: preview isolated; approval invariant enforced; portal approval disabled and the manual private-delivery procedure documented; legal pages marked DRAFT; manual processing disclosed; synthetic end-to-end workflow passes (automated). **Still needs:** owner approval of docs/41 (interim delivery) and docs/44 (manual operations/support), and owner/counsel sign-off before customers are asked to accept the draft terms.
+- **Gate 1 (limited production): NO-GO.** Blocked by: R2 delivery not live, legal documents not approved, production restore drill not done.
+- **Gate 2 (unrestricted production): NO-GO.**

@@ -1,5 +1,7 @@
 # Research Data Dictionary & Database Design
 
+> **PROPOSAL — not implemented in the application.** Migrations 0001–0002 contain no research tables.
+
 Status: PROPOSED — additive module; no production migration has been applied.
 
 ## Principles

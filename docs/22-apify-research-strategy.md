@@ -1,5 +1,7 @@
 # Apify Research Strategy — AVORLUNE
 
+> **PROPOSAL — not implemented.** No Apify token, connector, migration or paid run exists. Any run requires explicit owner budget approval.
+
 Status: PREPARATION / NO SCRAPING RUNS
 Purpose: evidence-led market, creative-format and competitor research for AI Creative Production.
 

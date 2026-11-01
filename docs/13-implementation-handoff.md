@@ -1,5 +1,7 @@
 # 13 — Implementation Handoff
 
+> **HISTORICAL / PLANNING REFERENCE.** Written before implementation. The actual layout is `src/`, `server/`, `shared/`, `functions/`, `migrations/`, `tests/` (see README). Current status lives in docs/37 and docs/39.
+
 ## Purpose
 This document translates the product blueprint into an implementation sequence for an AI coding agent or developer. It is not evidence that implementation or deployment has already happened.
 

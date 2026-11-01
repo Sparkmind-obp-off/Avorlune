@@ -1,5 +1,7 @@
 # Apify Actor Registry & Cost Controls
 
+> **PROPOSAL — not implemented.** No Apify token, connector, migration or paid run exists. Any run requires explicit owner budget approval.
+
 Status: DISCOVERED / NOT EXECUTED. Pricing changes; re-fetch details immediately before any run.
 
 | Platform | Actor | Intended use | Observed pricing snapshot | Decision |
