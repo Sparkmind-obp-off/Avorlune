@@ -3,6 +3,8 @@
 **Assessment date:** 2026-11-01  
 **Repository baseline reviewed:** `main`, reported application commits `d37b09b`, `cad1491`, `4c3c788`  
 **Purpose:** Define what remains before AVORLUNE can safely accept and fulfil real paid orders.  
+
+> **Decision superseded:** Earlier references in this historical assessment to DOKU/Midtrans as candidate gateways and sandbox-first payment integration are obsolete. The owner's current decision is Duitku POP LIVE/PRODUCTION only. Follow `docs/46` and `docs/52`. R2 is a required private-delivery dependency; follow `docs/51`.  
 **Important:** This is a repository/documentation and provider-research assessment. It is not an independent Cloudflare dashboard audit, deployed penetration test, legal opinion, merchant approval, or proof that a provider account is active.
 
 ---
