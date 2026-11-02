@@ -21,7 +21,7 @@ Customer-facing category: AI Creative Production. Do not describe AVORLUNE as an
 ## CUSTOMER JOURNEY
 
 Two paths:
-1. Ready-to-order: clearly scoped configured service. Full upfront payment may be used only where scope and price are fixed and disclosed.
+1. Ready-to-order: clearly scoped configured service. It follows the same 50% deposit before production and 50% balance before final delivery.
 2. Custom project: free structured brief → AVORLUNE review → quotation → customer approval → 50% deposit → production → protected preview/revisions → 50% balance → private final delivery.
 
 Custom project default is exactly 50% before production and 50% before final delivery. Do not switch to pay-after-completion or 40/40/20 unless owner approves.
