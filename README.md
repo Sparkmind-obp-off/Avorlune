@@ -141,7 +141,7 @@ Gap-closure work (docs/38) applied 2026-11-01: G0.2 and G0.3 closed, G0.1 code-c
 
 AVORLUNE's approved business model is a **service-led semi-marketplace for AI Creative Production**. It resembles a specialist freelance-service marketplace in the customer journey, but AVORLUNE does not hire or assign independent freelancers as its fulfilment model. AVORLUNE produces with authorized AI tools (initially Genspark) plus human creative direction, QA, and delivery. Customers buy creative services and agreed deliverables—not AI credits, account access, or subscriptions.
 
-**Custom project payment default: 50% deposit after quotation acceptance and before production; 50% balance after preview/revisions and before final unwatermarked delivery.** Brief submission is free and does not create an invoice or production commitment. Ready-to-order fixed-scope services may use full upfront payment only when complete scope and terms are disclosed.
+**Custom project payment default: 50% deposit after quotation acceptance and before production; 50% balance after preview/revisions and before final unwatermarked delivery.** Brief submission is free and does not create an invoice or production commitment. All paid services use the same 50% deposit before production and 50% balance before final delivery.
 
 Product and operational specifications:
 - [55 — Service-led semi-marketplace product strategy](docs/55-service-led-semi-marketplace-product-strategy.md)
