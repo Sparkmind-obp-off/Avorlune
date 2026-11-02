@@ -135,3 +135,25 @@ npm run check                              # typecheck + lint + tests
 
 ## Status
 Gap-closure work (docs/38) applied 2026-11-01: G0.2 and G0.3 closed, G0.1 code-complete but not live. **Not launch-ready for unrestricted production.** See `docs/37` §10 and `docs/39`.
+
+
+## Product and commercial model (approved target)
+
+AVORLUNE's approved business model is a **service-led semi-marketplace for AI Creative Production**. It resembles a specialist freelance-service marketplace in the customer journey, but AVORLUNE does not hire or assign independent freelancers as its fulfilment model. AVORLUNE produces with authorized AI tools (initially Genspark) plus human creative direction, QA, and delivery. Customers buy creative services and agreed deliverables—not AI credits, account access, or subscriptions.
+
+**Custom project payment default: 50% deposit after quotation acceptance and before production; 50% balance after preview/revisions and before final unwatermarked delivery.** Brief submission is free and does not create an invoice or production commitment. Ready-to-order fixed-scope services may use full upfront payment only when complete scope and terms are disclosed.
+
+Product and operational specifications:
+- [55 — Service-led semi-marketplace product strategy](docs/55-service-led-semi-marketplace-product-strategy.md)
+- [56 — Customer journey and order lifecycle](docs/56-customer-journey-and-order-lifecycle.md)
+- [57 — Service catalog and brief builder](docs/57-service-catalog-and-brief-builder.md)
+- [58 — Quotation, scope and change control](docs/58-quotation-scope-and-change-control.md)
+- [59 — Payment terms and 50/50 Duitku specification](docs/59-payment-terms-and-50-50-duitku-spec.md)
+- [60 — AI production and asset delivery operations](docs/60-ai-production-and-asset-delivery-operations.md)
+- [61 — Customer/admin UX and notifications](docs/61-customer-admin-ux-and-notification-spec.md)
+- [62 — Pricing, unit economics and capacity](docs/62-pricing-unit-economics-and-capacity.md)
+- [63 — Customer policy and contract requirements](docs/63-customer-policy-and-contract-requirements.md)
+- [64 — Data model, API and acceptance criteria](docs/64-data-model-api-and-acceptance-criteria.md)
+- [65 — Master system prompt: product and operations](docs/65-master-system-prompt-product-and-operations.md)
+
+These documents specify the approved target, not a claim that all corresponding application code, payment milestones, or production workflows have already been implemented. Existing payment implementation is currently single-amount/full-quote; 50/50 requires compatible backend, database, customer/admin UI, and regression-test work. Duitku remains LIVE/PRODUCTION only and checkout remains OFF until authentication verification and explicit owner approval. R2 provisioning, paid billing, real payment tests, and final legal publication remain approval-gated.
