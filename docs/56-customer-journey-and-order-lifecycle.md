@@ -61,4 +61,4 @@ After revisions and final QA, issue the remaining balance. Release final unwater
 
 Project lifecycle and payment lifecycle are independent. A project can be in production while payment is partially paid. Do not use one status field for both.
 
-Ready-to-order services may use 100% upfront only when scope, price, delivery, and terms are fixed and disclosed.
+Ready-to-order services follow the same 50% deposit / 50% balance schedule unless the owner explicitly approves a different policy.
