@@ -51,3 +51,10 @@ AVORLUNE is a working name until exact/similar domain, social and trademark chec
 
 ## Communication
 Use clear, direct Indonesian by default. Be action-oriented. Do not ask the user to repeat decisions already documented. Ask one concise question only when a critical blocker cannot be safely assumed.
+
+
+## Customer portal and CRM expansion — 2026-11-03
+
+Follow docs/66–76 for the approved full-stack customer portal, customer-only Clerk authentication, optional onboarding, service discovery, brief builder, searchable customer CRM, demo isolation, API and rollout. Customers can browse publicly and sign in before submitting or viewing private data. Keep the universal 50% deposit + 50% balance rule.
+
+Owner requests no AVORLUNE app login screen for admin. Do not expose real CRM or mutation APIs publicly: retain existing admin protection until a verified private perimeter protects the UI and API. If absolutely no perimeter is allowed, expose only a read-only synthetic demo. Do not confuse no app login form with no backend authorization.
