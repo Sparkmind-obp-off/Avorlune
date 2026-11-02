@@ -11,7 +11,7 @@ For custom creative projects:
 
 The deposit is an advance payment for the agreed service, not a purchase of AI credits. Do not claim deposits are automatically forfeited; cancellation/refund depends on reviewed terms, work performed, costs properly incurred, and applicable law.
 
-Standardized ready-to-order services may use 100% upfront only when scope, price, delivery, revisions, and terms are fully disclosed. This is an exception; custom project default remains 50/50.
+All paid AVORLUNE services use the same 50% deposit before production and 50% balance before final delivery. Do not introduce a full-upfront exception unless the owner explicitly approves a policy change.
 
 ## 2. Milestones
 
