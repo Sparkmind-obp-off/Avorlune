@@ -126,3 +126,8 @@ Audit records should include event type, timestamp, actor ID, target reference, 
 - Password/secret rotation invalidates sessions.
 - Cookies have required security attributes.
 - Logs and exports contain no secrets or raw tokens.
+
+
+## 11. Owner decision update — 2026-11-03
+
+The owner requests that the admin workspace have no AVORLUNE application login form. This supersedes the login-screen UX above, but **does not remove backend security requirements**. Do not remove the current admin session protection until a verified private perimeter protects the admin UI and all admin API routes. Do not expose customer records, payments, assets, exports or mutations publicly. If no private perimeter can be approved, retain existing admin authentication; a public admin surface may only be a read-only synthetic demo. See docs/70 and docs/75.
