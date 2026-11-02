@@ -113,3 +113,10 @@ Authentication establishes identity; authorization is enforced on every API requ
 - CORS, CSRF, cookie scope, rate limits, audit logging, and session revocation are tested.
 - Existing customer project-link flow remains functional until a separately approved migration.
 - Existing Duitku LIVE safety gates remain unchanged.
+
+
+## 10. Owner decision update — 2026-11-03
+
+The owner now requests **no AVORLUNE in-app admin login screen**. This supersedes the admin login-form UX in sections 1, 4 and 9. The customer frontend remains Clerk customer-only. No admin sign-up or public registration exists.
+
+This is a UX decision, not permission to expose CRM data. Keep the existing admin authentication until a private network/perimeter policy protects the admin frontend and every admin API route and passes allow/deny tests. If perimeter access itself requires identity verification, it is perimeter-level access rather than an AVORLUNE app login. If the owner requires absolutely no identity or network restriction, only a read-only synthetic demo is safe; real CRM and mutation routes must remain unavailable. See docs/70.
