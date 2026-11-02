@@ -129,3 +129,10 @@ Do not cut over if any of these fail:
 - Existing customer project-link compatibility.
 - Production rollback plan.
 - No admin sign-up or public navigation path.
+
+
+## 10. Owner decision update — 2026-11-03
+
+Customer Clerk authentication remains the target. Onboarding is optional and skippable; public service discovery remains open. Customers authenticate before brief submission and private workspace access. Preserve guest drafts through sign-in and retain legacy signed project links during migration.
+
+Admin UX is updated: no AVORLUNE app login screen. This supersedes the admin sign-in acceptance tests above. However, keep existing admin protection until a private perimeter is verified for both frontend and API. Customer tokens must never satisfy admin access. If no perimeter is available, do not expose real CRM data or mutations. See docs/67 and docs/70.
