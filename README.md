@@ -157,3 +157,25 @@ Product and operational specifications:
 - [65 — Master system prompt: product and operations](docs/65-master-system-prompt-product-and-operations.md)
 
 These documents specify the approved target, not a claim that all corresponding application code, payment milestones, or production workflows have already been implemented. Existing payment implementation is currently single-amount/full-quote; 50/50 requires compatible backend, database, customer/admin UI, and regression-test work. Duitku remains LIVE/PRODUCTION only and checkout remains OFF until authentication verification and explicit owner approval. R2 provisioning, paid billing, real payment tests, and final legal publication remain approval-gated.
+
+
+## Customer platform, CRM and demo expansion (2026-11-03)
+
+The next approved product expansion is a full-stack customer portal and searchable customer operations workspace. Customers may browse publicly, sign in/sign up before submitting briefs or accessing private projects, skip onboarding, and continue directly to service discovery. Public demo uses synthetic data only.
+
+New specifications:
+- [66 — Customer platform product blueprint](docs/66-customer-platform-product-blueprint.md)
+- [67 — Customer authentication and onboarding](docs/67-customer-auth-and-onboarding-spec.md)
+- [68 — Service discovery and brief builder UX](docs/68-service-discovery-and-brief-builder-ux.md)
+- [69 — Customer CRM and admin workspace](docs/69-customer-crm-and-admin-workspace.md)
+- [70 — Admin no-login UX and private perimeter security](docs/70-admin-no-login-and-perimeter-security.md)
+- [71 — Demo and staging isolation](docs/71-demo-and-staging-isolation-spec.md)
+- [72 — Customer data model and migration](docs/72-customer-data-model-and-migration.md)
+- [73 — Customer/admin API contract](docs/73-customer-and-admin-api-contract.md)
+- [74 — Notifications, support and retention](docs/74-notifications-support-and-retention.md)
+- [75 — Full-stack roadmap and release gates](docs/75-full-stack-roadmap-and-release-gates.md)
+- [76 — Master prompt for customer platform and CRM](docs/76-master-prompt-customer-platform-and-crm.md)
+
+**Admin access decision update:** owner requests no AVORLUNE in-app admin login screen. This supersedes the older admin login UX in docs 47–50. It does not authorize a public CRM/API. Keep existing admin protection until a private perimeter protecting both UI and API is verified. If no perimeter or identity/network restriction is acceptable, only a public read-only synthetic demo may be exposed; real customer data and mutations remain private.
+
+**Status:** These are target specifications. They do not mean Clerk, the customer portal, CRM, demo, new API routes or the private perimeter have been implemented or deployed. Existing production architecture and payment/R2 safety gates remain unchanged.
