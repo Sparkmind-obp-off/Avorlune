@@ -246,3 +246,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); outline
 .approve-box { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: 1rem; }
 .t-final { color: var(--accent); } .t-preview { color: #a9bddb; }
 @media (max-width: 560px) { .asset-list li { flex-direction: column; align-items: flex-start; } }
+
+/* Admin operations (docs/54) */
+.admin-nav { display: flex; gap: .25rem; flex-wrap: wrap; padding: .5rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.admin-nav a { padding: .4rem .75rem; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: .9rem; }
+.admin-nav a.active, .admin-nav a:hover { color: var(--text, inherit); background: var(--bg); }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 50; padding: 1rem; }
+.modal { width: min(440px, 100%); background: var(--bg); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.stat { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+.stat strong { display: block; font-size: 1.5rem; }
+.ops-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .75rem; }
+.ops-list li { border: 1px solid var(--line); border-radius: 10px; padding: .75rem 1rem; }
+.prewrap { white-space: pre-wrap; }

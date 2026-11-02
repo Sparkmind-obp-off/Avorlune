@@ -267,6 +267,10 @@ describe('critical end-to-end scenario (docs/15)', () => {
     await patch('customer_review')
     expect((await ctx.call('POST', `/projects/${reference}/approval`, { json: {}, headers: h })).status).toBe(422)
     expect((await ctx.call('POST', `/projects/${reference}/approval`, { json: { assetId: fin.body.data.id }, headers: h })).status).toBe(200)
+    // Rights clearance (docs/54 §4): licence record with evidence + human QA before delivery.
+    const lic = await ctx.call('POST', `/admin/projects/${id}/licenses`, { json: { assetId: fin.body.data.id, sourceType: 'ai_generated', providerSlug: 'genspark', commercialUse: 'allowed', licenseEvidence: 'Genspark Plus aktif saat generate; invoice #TEST' }, headers: auth })
+    expect(lic.status).toBe(201)
+    expect((await ctx.call('POST', `/admin/projects/${id}/licenses/${lic.body.data.id}/qa`, { json: { deliveryPermitted: true }, headers: auth })).status).toBe(200)
     await patch('delivered')
 
     const detail = await ctx.call('GET', `/admin/projects/${id}`, { headers: auth })

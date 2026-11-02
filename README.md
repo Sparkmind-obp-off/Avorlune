@@ -57,7 +57,9 @@ Architecture and implementation documents:
 | Environment isolation | Preview deployments have no D1/R2 binding; runtime guard requires `app_meta.environment == APP_ENV`; static config test. Verified live (preview API → 503). |
 | Customer view | `/p/:reference#t=<token>` — HMAC-signed, 30-day, revocable; status, timeline, quote decision, consolidated feedback, private file list/download and final approval (when delivery is enabled). |
 | Duitku POP payment | Checkout from the customer portal (amount from accepted quote, invoice reuse, 60-min expiry), signed callback + amount check + server-to-server status before settling once → `queued`; admin gateway status probe (masked), order list, reconcile. **Deployed with checkout OFF; LIVE production authentication diagnostics remain unresolved. Owner confirms supplied credentials are LIVE/PRODUCTION; errors do not mean they are sandbox. See `docs/46` and `docs/52`.** |
-| Tests | 88 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
+| Business operations | Step-up re-auth for sensitive admin actions; manual refund workflow; notification outbox (manual send until email provider approved); asset licensing/provenance registry with delivery gate; support tickets; admin dashboard (`docs/54`). |
+| Legal pages (DRAFT) | `/terms`, `/privacy`, `/ai-licensing` (AI commercial use + copyright, official sources), `/refund-policy`, `/pricing` (quote-based, no invented prices). |
+| Tests | 100 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
 
 ### Not yet implemented / blocked
 - **Two separate frontend deployments and shared Worker API** — approved target architecture; current admin still lives under `/admin` in the customer Pages deployment.

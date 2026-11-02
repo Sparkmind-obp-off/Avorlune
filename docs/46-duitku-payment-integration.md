@@ -107,3 +107,16 @@ Checkout remains OFF (`DUITKU_CHECKOUT_ENABLED=false`). No live transaction has 
 - Duitku API (payment methods and transaction status): https://docs.duitku.com/api/id/
 - Merchant portal: https://passport.duitku.com/
 - Detailed AVORLUNE LIVE directive: docs/52
+
+## 12. Diagnostics with controls (2026-11-02, read-only, no invoice)
+Run with `DUITKU_MERCHANT_CODE=… DUITKU_API_KEY=… node scripts/duitku-diagnose.mjs` (prints no secrets).
+| Probe | Result |
+|---|---|
+| getpaymentmethod — documented HMAC_SHA256(merchantcode+amount+datetime), amount int and string | 403 `Invalid Signature.` |
+| getpaymentmethod — legacy SHA256, uppercase-key variants | 403 `Invalid Signature.` |
+| transactionStatus — documented HMAC_SHA256(merchantCode+merchantOrderId), JSON and form | 401 `Wrong signature` |
+| **Control:** deliberately wrong key | 403 `Invalid Signature.` (identical) |
+| **Control:** non-existent merchant code `DZZZZ1` | 404 `Merchant not found.` |
+
+Interpretation: the configured merchant code exists in Duitku production (it is not "not found"), and our requests reach the signature check. Signatures built with the supplied key are rejected exactly like a deliberately wrong key. Formulas match the official docs for each endpoint; the key is 32 lowercase hex chars without whitespace; the sandbox clock matches Duitku's `Date` header. This points to the API key not being the key of that merchant project (e.g. copied from another project, regenerated afterwards, or truncated) — not to sandbox credentials and not to an implementation defect. **Owner action:** in passport.duitku.com → Project → the project with this merchant code, copy its API key again and provide it via a new upload; it will be stored with `wrangler pages secret put` only. Checkout stays OFF.
+

@@ -19,6 +19,10 @@ export interface Env {
   DUITKU_MERCHANT_CODE?: string
   DUITKU_API_KEY?: string
   DUITKU_CHECKOUT_ENABLED?: string
+  /** Transactional email (docs/54 §3). Sending happens only when ALL three are set and the switch is 'true'. */
+  NOTIFY_EMAIL_ENABLED?: string
+  NOTIFY_FROM_EMAIL?: string
+  RESEND_API_KEY?: string
 }
 
 export interface SessionUser {
@@ -26,6 +30,8 @@ export interface SessionUser {
   email: string
   role: 'admin'
   csrfToken: string
+  sessionHash: string
+  reauthAt: string | null
 }
 
 export type AppBindings = {

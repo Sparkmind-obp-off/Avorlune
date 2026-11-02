@@ -3,6 +3,7 @@ import { ApiError, newId, nowIso } from '../lib/http'
 import { randomBytes, toHex } from '../lib/crypto'
 import { checkTransaction, createInvoice, DuitkuError, getDuitkuConfig, type DuitkuConfig } from '../lib/duitku'
 import { eventStmt } from './events'
+import { enqueueNotification } from './notifications'
 import { getProjectById, transition, type ProjectRow } from './projects'
 import { logEvent } from '../lib/log'
 
@@ -70,6 +71,7 @@ export async function startCheckout(env: Env, db: D1Database, p: ProjectRow, ori
     providerError(e)
   }
   await db.prepare(`UPDATE payment_orders SET status = 'pending', provider_reference = ?1, payment_url = ?2, updated_at = ?3 WHERE id = ?4 AND status = 'created'`).bind(inv.reference, inv.paymentUrl, nowIso(), id).run()
+  await enqueueNotification(db, p, 'payment_pending', id, q.amount_minor)
   const order = (await db.prepare('SELECT * FROM payment_orders WHERE id = ?1').bind(id).first<PaymentOrderRow>())!
   return { order, reference: inv.reference, cfg, reused: false }
 }
@@ -93,6 +95,10 @@ export async function settlePaid(db: D1Database, order: PaymentOrderRow, info: {
                 WHERE EXISTS (SELECT 1 FROM payment_orders WHERE id = ?5 AND status = 'paid' AND paid_at = ?4)`)
       .bind(newId(), order.project_id, JSON.stringify({ orderId: order.id, merchantOrderId: order.merchant_order_id, amountMinor: order.amount_minor, paymentCode: info.paymentCode ?? null, via }), stamp, order.id),
   ])
+  if ((res[0].meta.changes ?? 0) === 1) {
+    const proj = await getProjectById(db, order.project_id)
+    if (proj) await enqueueNotification(db, proj, 'payment_success', order.id, order.amount_minor)
+  }
   if ((res[0].meta.changes ?? 0) !== 1) return 'already_paid' as const
   // Move the project into the production queue if it was waiting for payment.
   const p = await getProjectById(db, order.project_id)
@@ -104,6 +110,11 @@ export async function settlePaid(db: D1Database, order: PaymentOrderRow, info: {
     }
   }
   return 'paid' as const
+}
+
+async function notifyFailed(db: D1Database, order: PaymentOrderRow) {
+  const proj = await getProjectById(db, order.project_id)
+  if (proj) await enqueueNotification(db, proj, 'payment_failed', order.id)
 }
 
 /** Server-to-server reconciliation with Duitku. Never trusts browser-reported results. */
@@ -123,10 +134,12 @@ export async function reconcileOrder(env: Env, db: D1Database, order: PaymentOrd
       outcome = await settlePaid(db, order, { reference: st.reference }, 'reconcile')
     }
   } else if (st.statusCode === '02') {
-    await db.prepare(`UPDATE payment_orders SET status = 'cancelled', failure_code = '02', last_checked_at = ?1, updated_at = ?1 WHERE id = ?2 AND status IN ('created','pending')`).bind(now, order.id).run()
+    const r = await db.prepare(`UPDATE payment_orders SET status = 'cancelled', failure_code = '02', last_checked_at = ?1, updated_at = ?1 WHERE id = ?2 AND status IN ('created','pending')`).bind(now, order.id).run()
+    if ((r.meta.changes ?? 0) === 1) await notifyFailed(db, order)
     outcome = 'cancelled'
   } else if (order.expires_at < now) {
-    await db.prepare(`UPDATE payment_orders SET status = 'expired', last_checked_at = ?1, updated_at = ?1 WHERE id = ?2 AND status IN ('created','pending')`).bind(now, order.id).run()
+    const r = await db.prepare(`UPDATE payment_orders SET status = 'expired', last_checked_at = ?1, updated_at = ?1 WHERE id = ?2 AND status IN ('created','pending')`).bind(now, order.id).run()
+    if ((r.meta.changes ?? 0) === 1) await notifyFailed(db, order)
     outcome = 'expired'
   } else {
     await db.prepare(`UPDATE payment_orders SET last_checked_at = ?1 WHERE id = ?2`).bind(now, order.id).run()
@@ -160,7 +173,8 @@ export async function handleCallback(cfg: DuitkuConfig, db: D1Database, f: Recor
     return { status: 200 as const, body: 'SUCCESS' }
   }
   if (order.status !== 'paid') {
-    await db.prepare(`UPDATE payment_orders SET status = 'failed', failure_code = ?1, updated_at = ?2 WHERE id = ?3 AND status IN ('created','pending')`).bind((f.resultCode ?? '').slice(0, 4), nowIso(), order.id).run()
+    const r = await db.prepare(`UPDATE payment_orders SET status = 'failed', failure_code = ?1, updated_at = ?2 WHERE id = ?3 AND status IN ('created','pending')`).bind((f.resultCode ?? '').slice(0, 4), nowIso(), order.id).run()
+    if ((r.meta.changes ?? 0) === 1) await notifyFailed(db, order)
   }
   await record(true, `result_${(f.resultCode ?? 'x').slice(0, 4)}`)
   return { status: 200 as const, body: 'SUCCESS' }

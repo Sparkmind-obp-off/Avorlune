@@ -11,6 +11,8 @@ import { z } from 'zod'
 import { checkoutEnabled, getDuitkuConfig } from '../lib/duitku'
 import { publicOrder, reconcileOrder, startCheckout, type PaymentOrderRow } from '../domain/payments'
 import { eventStmt } from '../domain/events'
+import { notificationStmt } from '../domain/notifications'
+import { supportSchema } from '../domain/operations'
 
 export const customerRoutes = new Hono<AppBindings>()
 
@@ -68,6 +70,8 @@ customerRoutes.get('/projects/:reference', async (c) => {
     feedback: fb.results ?? [],
     deliveryEnabled: deliveryEnabled(c.env),
     payment: await customerPayment(c.env, db, p),
+    support: ((await db.prepare(`SELECT id, category, status, created_at, resolved_at, resolution_note FROM support_tickets WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 20`).bind(p.id).all()).results ?? []),
+    refunds: ((await db.prepare(`SELECT id, amount_minor, status, created_at, resolved_at FROM refunds WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 20`).bind(p.id).all()).results ?? []),
     assets: await customerAssets(deliveryEnabled(c.env) ? db : null, p),
     approvedAssetId: p.approved_asset_id ?? null,
     actions: {
@@ -122,6 +126,7 @@ customerRoutes.post('/projects/:reference/quote/decision', async (c) => {
   const res = await db.batch([
     db.prepare(`UPDATE quotes SET status = ?1, accepted_at = ?2, updated_at = ?3 WHERE id = ?4 AND status = 'sent'`).bind(decision, decision === 'accepted' ? now : null, now, q.id),
     eventStmt(db, { projectId: p.id, actorType: 'customer', eventType: `quote_${decision}`, metadata: { quoteId: q.id } }),
+    ...(decision === 'accepted' ? [notificationStmt(db, p, 'quote_accepted', q.id, q.amount_minor)] : []),
   ])
   if ((res[0].meta.changes ?? 0) !== 1) throw new ApiError(409, 'STALE_STATE', 'Penawaran sudah diputuskan')
   return ok(c, { quoteId: q.id, status: decision })
@@ -193,4 +198,18 @@ customerRoutes.post('/projects/:reference/payments/:orderId/refresh', async (c) 
   if (!o) throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan')
   const r = await reconcileOrder(c.env, c.env.DB, o)
   return ok(c, { order: publicOrder(r.order), outcome: r.outcome })
+})
+
+/** Customer support / issue reporting. Bounded per project; message is never echoed to other projects. */
+customerRoutes.post('/projects/:reference/support', async (c) => {
+  const p = await authorizeCustomer(c)
+  await enforceRateLimit(c.env.DB, 'support', p.id, 5, 3600)
+  const input = await parseJson(c, supportSchema)
+  const id = newId()
+  const now = nowIso()
+  await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO support_tickets (id, project_id, category, message, status, created_at) VALUES (?1, ?2, ?3, ?4, 'open', ?5)`).bind(id, p.id, input.category, input.message, now),
+    eventStmt(c.env.DB, { projectId: p.id, actorType: 'customer', eventType: 'support_opened', metadata: { ticketId: id, category: input.category } }),
+  ])
+  return ok(c, { id, status: 'open' }, 201)
 })

@@ -8,7 +8,7 @@ import { ProcessPage } from './pages/ProcessPage'
 import { AboutPage } from './pages/AboutPage'
 import { StartProjectPage } from './pages/StartProjectPage'
 import { ContactPage } from './pages/ContactPage'
-import { PrivacyPage, TermsPage } from './pages/LegalPages'
+import { AiLicensingPage, PricingPage, PrivacyPage, RefundPolicyPage, TermsPage } from './pages/LegalPages'
 import { CustomerProjectPage } from './pages/CustomerProjectPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminApp } from './pages/admin/AdminApp'
@@ -36,6 +36,9 @@ export default function App() {
           <Route path="contact" element={<ContactPage />} />
           <Route path="privacy" element={<PrivacyPage />} />
           <Route path="terms" element={<TermsPage />} />
+          <Route path="ai-licensing" element={<AiLicensingPage />} />
+          <Route path="refund-policy" element={<RefundPolicyPage />} />
+          <Route path="pricing" element={<PricingPage />} />
           <Route path="p/:reference" element={<CustomerProjectPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

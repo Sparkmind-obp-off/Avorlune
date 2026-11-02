@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Alert } from '../components/Field'
 import { PaymentPanel, type PaymentInfo } from '../components/PaymentPanel'
 import { api, ApiFailure, downloadFile, formatBytes, formatDate, type AssetInfo } from '../lib/api'
@@ -13,6 +13,8 @@ interface CustomerProject {
   feedback: { id: string; message: string; revision_round: number; within_scope: number; created_at: string }[]
   deliveryEnabled: boolean
   payment: PaymentInfo
+  support: { id: string; category: string; status: string; created_at: string; resolved_at: string | null; resolution_note: string | null }[]
+  refunds: { id: string; amount_minor: number; status: string; created_at: string; resolved_at: string | null }[]
   assets: AssetInfo[]
   approvedAssetId: string | null
   actions: { canDecideQuote: boolean; canSubmitFeedback: boolean; canApprove: boolean }
@@ -44,6 +46,8 @@ export function CustomerProjectPage() {
   const [feedback, setFeedback] = useState('')
   const [busy, setBusy] = useState(false)
   const [approveId, setApproveId] = useState('')
+  const [ticketCat, setTicketCat] = useState('question')
+  const [ticketMsg, setTicketMsg] = useState('')
 
   const load = useCallback(async () => {
     if (!token) { setLoading(false); setError('Tautan akses tidak ditemukan. Gunakan tautan privat yang dikirim oleh tim AVORLUNE.'); return }
@@ -129,7 +133,7 @@ export function CustomerProjectPage() {
                 </li>
               ))}
             </ul>
-            <p className="small muted">File bersifat privat dan hanya dapat diunduh melalui tautan proyek ini.</p>
+            <p className="small muted">File bersifat privat dan hanya dapat diunduh melalui tautan proyek ini. Hasil dibuat dengan bantuan AI generatif dan diperiksa manusia — lihat <Link to="/ai-licensing">Penggunaan AI &amp; Lisensi Hasil</Link>.</p>
           </article>
         )}
 
@@ -191,6 +195,37 @@ export function CustomerProjectPage() {
             ))}
           </article>
         )}
+        {data.refunds?.length > 0 && (
+          <article className="panel" id="refund-status">
+            <h2 className="h4">Status refund</h2>
+            <ul className="small plain">
+              {data.refunds.map((r) => <li key={r.id}>{formatIDR(r.amount_minor)} · {r.status === 'requested' ? 'Sedang diproses' : r.status === 'processed' ? `Diproses ${formatDate(r.resolved_at, true)}` : 'Tidak disetujui'}</li>)}
+            </ul>
+          </article>
+        )}
+
+        <article className="panel" id="support-panel">
+          <h2 className="h4">Bantuan</h2>
+          <p className="small muted">Ada pertanyaan, kendala file, atau permintaan pembatalan/refund? Kirim pesan — tim kami membalas melalui kanal kontak Anda. Lihat <Link to="/refund-policy">Kebijakan Pembatalan &amp; Refund</Link>.</p>
+          <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (ticketMsg.trim().length >= 5) void act('/support', { category: ticketCat, message: ticketMsg }, 'Pesan terkirim. Tim kami akan menghubungi Anda.').then(() => setTicketMsg('')) }}>
+            <label htmlFor="ticket-cat" className="block-label">Kategori</label>
+            <select id="ticket-cat" value={ticketCat} onChange={(e) => setTicketCat(e.target.value)}>
+              <option value="question">Pertanyaan</option>
+              <option value="issue">Kendala</option>
+              <option value="refund_request">Pembatalan / refund</option>
+              <option value="other">Lainnya</option>
+            </select>
+            <label htmlFor="ticket-msg" className="block-label">Pesan</label>
+            <textarea id="ticket-msg" rows={4} maxLength={4000} value={ticketMsg} onChange={(e) => setTicketMsg(e.target.value)} />
+            <div className="btn-row"><button type="submit" className="btn btn-ghost" disabled={busy || ticketMsg.trim().length < 5}>Kirim</button></div>
+          </form>
+          {data.support?.length > 0 && (
+            <ul className="small plain">
+              {data.support.map((t) => <li key={t.id}>{formatDate(t.created_at, true)} · {t.status === 'open' ? 'Menunggu tanggapan' : `Selesai — ${t.resolution_note ?? ''}`}</li>)}
+            </ul>
+          )}
+        </article>
+
         <p className="small muted">Tautan ini bersifat privat dan memiliki masa berlaku. Jangan bagikan ke pihak lain.</p>
       </div>
     </section>

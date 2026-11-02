@@ -15,6 +15,12 @@ export const setCsrf = (t: string | null) => {
   csrfToken = t
 }
 
+/** Step-up handler (admin): asks for the password again; resolves true when re-authenticated. */
+let reauthHandler: (() => Promise<boolean>) | null = null
+export const setReauthHandler = (fn: (() => Promise<boolean>) | null) => {
+  reauthHandler = fn
+}
+
 export async function api<T>(path: string, init: RequestInit & { json?: unknown; projectToken?: string } = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('accept', 'application/json')
@@ -34,6 +40,10 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown;
   }
   const payload = await res.json().catch(() => null)
   if (!res.ok) {
+    // Sensitive admin action: re-confirm the password once, then retry the same request exactly once.
+    if (res.status === 403 && payload?.error?.code === 'REAUTH_REQUIRED' && reauthHandler && !(init as { _retried?: boolean })._retried) {
+      if (await reauthHandler()) return api<T>(path, { ...init, _retried: true } as typeof init)
+    }
     throw new ApiFailure(res.status, payload?.error ?? { code: 'UNKNOWN', message: `Permintaan gagal (${res.status})` })
   }
   return payload.data as T

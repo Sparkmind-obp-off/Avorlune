@@ -6,6 +6,7 @@ import { ApiError, clientIp, newId, nowIso, ok, parseJson } from '../lib/http'
 import { enforceRateLimit, pruneOperationalData } from '../lib/rateLimit'
 import { randomBytes, sha256Hex } from '../lib/crypto'
 import { eventStmt } from '../domain/events'
+import { notificationStmt } from '../domain/notifications'
 
 export const publicRoutes = new Hono<AppBindings>()
 
@@ -62,6 +63,7 @@ publicRoutes.post('/inquiries', async (c) => {
           )
           .bind(id, reference, input.name, input.contactMethod, input.contactValue, input.serviceType, input.title, input.objective, JSON.stringify(brief), input.intendedUse, input.deadlineDate ?? null, now),
         eventStmt(db, { projectId: id, actorType: 'customer', eventType: 'inquiry_created', toStatus: 'inquiry', metadata: { serviceType: input.serviceType } }),
+        notificationStmt(db, { id, public_reference: reference, title: input.title, customer_name: input.name, contact_method: input.contactMethod }, 'project_submitted', 'created'),
       ]
       if (idemHash) {
         stmts.push(db.prepare("INSERT INTO idempotency_keys (key_hash, scope, project_id, created_at) VALUES (?1, 'inquiry', ?2, ?3)").bind(idemHash, id, now))

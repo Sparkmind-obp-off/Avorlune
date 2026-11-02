@@ -5,7 +5,7 @@ import { ApiError, clientIp, newId, nowIso, ok, parseJson } from '../lib/http'
 import { enforceRateLimit } from '../lib/rateLimit'
 import { safeEqual, verifyPassword } from '../lib/crypto'
 import { signProjectToken } from '../lib/projectToken'
-import { createSession, destroyAllSessions, destroySession, loadSession, requireStaff, upsertConfiguredAdmin } from '../middleware/auth'
+import { REAUTH_WINDOW_SEC, createSession, destroyAllSessions, destroySession, hasRecentAuth, loadSession, markReauthenticated, requireRecentAuth, requireStaff, upsertConfiguredAdmin } from '../middleware/auth'
 import { MAX_ASSET_BYTES, UPLOAD_KINDS, UPLOAD_STATUSES, getProjectAsset, publicAsset, storeAsset, streamAsset, type AssetRow, type UploadKind } from '../domain/assets'
 import { deliveryEnabled } from '../domain/assets'
 import { logEvent } from '../lib/log'
@@ -13,6 +13,9 @@ import { checkoutEnabled, getDuitkuConfig, probeCredentials } from '../lib/duitk
 import { publicOrder, reconcileOrder, type PaymentOrderRow } from '../domain/payments'
 import { assertTransitionAllowed, requireProject, transition } from '../domain/projects'
 import { eventStmt } from '../domain/events'
+import { adminOps } from './adminOps'
+import { STATUS_NOTIFICATIONS, notificationStmt } from '../domain/notifications'
+import { assertDeliveryCleared } from '../domain/operations'
 
 export const adminRoutes = new Hono<AppBindings>()
 
@@ -41,7 +44,20 @@ adminRoutes.post('/auth/login', async (c) => {
 adminRoutes.get('/auth/me', async (c) => {
   const user = await loadSession(c)
   if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Belum masuk')
-  return ok(c, { email: user.email, role: user.role, csrfToken: user.csrfToken })
+  return ok(c, { email: user.email, role: user.role, csrfToken: user.csrfToken, recentAuth: hasRecentAuth(user) })
+})
+
+/** Step-up: re-confirm the password to unlock sensitive actions for REAUTH_WINDOW_SEC (docs/48 §5). */
+adminRoutes.post('/auth/reauth', requireStaff, async (c) => {
+  const user = c.get('user')!
+  await enforceRateLimit(c.env.DB, 'reauth', user.id, 10, 900)
+  const { password } = await parseJson(c, loginSchema.pick({ password: true }))
+  if (!(await verifyPassword(password, c.env.ADMIN_PASSWORD_HASH ?? ''))) {
+    logEvent('warn', 'admin_reauth_failed', { requestId: c.get('requestId') })
+    throw new ApiError(401, 'INVALID_CREDENTIALS', 'Kata sandi salah')
+  }
+  const at = await markReauthenticated(c.env.DB, user)
+  return ok(c, { recentAuth: true, validUntil: new Date(Date.parse(at) + REAUTH_WINDOW_SEC * 1000).toISOString() })
 })
 
 adminRoutes.post('/auth/logout', requireStaff, async (c) => {
@@ -93,6 +109,12 @@ admin.get('/projects', async (c) => {
 admin.get('/projects/:id', async (c) => {
   const db = c.env.DB
   const p = await requireProject(db, c.req.param('id'))
+  const [refundRows, licenses, notifications, tickets] = await Promise.all([
+    db.prepare('SELECT id, payment_id, amount_minor, reason, status, channel, provider_reference, resolution_note, created_at, resolved_at FROM refunds WHERE project_id = ?1 ORDER BY created_at DESC').bind(p.id).all(),
+    db.prepare('SELECT * FROM asset_licenses WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 200').bind(p.id).all(),
+    db.prepare('SELECT id, event, channel, subject, body, status, attempts, last_error, created_at, sent_at FROM notifications WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 100').bind(p.id).all(),
+    db.prepare('SELECT id, category, message, status, resolution_note, created_at, resolved_at FROM support_tickets WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 100').bind(p.id).all(),
+  ])
   const [quotes, payments, feedback, events, assets, costs] = await Promise.all([
     db.prepare('SELECT * FROM quotes WHERE project_id = ?1 ORDER BY created_at DESC').bind(p.id).all(),
     db.prepare('SELECT id, amount_minor, currency, method, provider_reference, status, confirmed_by, confirmed_at, created_at FROM payments WHERE project_id = ?1 ORDER BY created_at DESC').bind(p.id).all(),
@@ -109,6 +131,10 @@ admin.get('/projects/:id', async (c) => {
   const refunds = costRows.filter((x) => x.kind === 'refund').reduce((a, b) => a + b.amount_minor, 0)
   const laborCost = costRows.filter((x) => x.kind === 'labor').reduce((a, b) => a + b.amount_minor, 0)
   return ok(c, {
+    refunds: refundRows.results ?? [],
+    licenses: licenses.results ?? [],
+    notifications: notifications.results ?? [],
+    supportTickets: tickets.results ?? [],
     deliveryEnabled: deliveryEnabled(c.env),
     assets: (assets.results ?? []).map(publicAsset),
     costs: costRows,
@@ -134,13 +160,17 @@ admin.patch('/projects/:id/status', async (c) => {
   const p = await requireProject(db, c.req.param('id'))
   const { toStatus, reason, assetId } = await parseJson(c, statusChangeSchema)
   await assertTransitionAllowed(db, p, toStatus as ProjectStatus, reason, c.env, assetId)
+  // Rights clearance: the approved final asset needs a QA-approved licence record before delivery (docs/54 §4).
+  if (toStatus === 'delivered' && p.approved_asset_id) await assertDeliveryCleared(db, p.id, p.approved_asset_id)
   const meta: Record<string, unknown> = reason ? { reason } : {}
   if (toStatus === 'approved') meta.assetId = assetId
-  await transition(db, p, toStatus as ProjectStatus, { type: 'admin', userId: user.id }, meta, (stamp) =>
-    toStatus === 'approved'
+  const notify = STATUS_NOTIFICATIONS[toStatus]
+  await transition(db, p, toStatus as ProjectStatus, { type: 'admin', userId: user.id }, meta, (stamp) => [
+    ...(toStatus === 'approved'
       ? [db.prepare(`UPDATE projects SET approved_asset_id = ?1 WHERE id = ?2 AND status = 'approved' AND updated_at = ?3`).bind(assetId, p.id, stamp)]
-      : [],
-  )
+      : []),
+    ...(notify ? [notificationStmt(db, p, notify, stamp)] : []),
+  ])
   return ok(c, { id: p.id, status: toStatus })
 })
 
@@ -162,12 +192,14 @@ admin.post('/projects/:id/quotes', async (c) => {
       )
       .bind(id, p.id, input.amountMinor, JSON.stringify({ deliverables: input.deliverables, notes: input.notes ?? null }), input.includedRevisionRounds, input.estimatedDeliveryAt ?? null, input.status, now),
     eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: input.status === 'sent' ? 'quote_sent' : 'quote_drafted', metadata: { quoteId: id, amountMinor: input.amountMinor } }),
+    ...(input.status === 'sent' ? [notificationStmt(db, p, 'quote_sent', id, input.amountMinor)] : []),
   ]
   await db.batch(stmts)
   return ok(c, { id, status: input.status }, 201)
 })
 
-admin.post('/projects/:id/payments/confirm', async (c) => {
+/** Manual payment confirmation attests money was received → step-up auth + audit. */
+admin.post('/projects/:id/payments/confirm', requireRecentAuth, async (c) => {
   const db = c.env.DB
   const user = c.get('user')!
   const p = await requireProject(db, c.req.param('id'))
@@ -184,7 +216,8 @@ admin.post('/projects/:id/payments/confirm', async (c) => {
          VALUES (?1, ?2, ?3, 'IDR', ?4, ?5, 'manually_confirmed', ?6, ?7, ?7, ?7)`,
       )
       .bind(id, p.id, input.amountMinor, input.method, input.providerReference ?? null, user.id, now),
-    eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'payment_manually_confirmed', metadata: { paymentId: id, amountMinor: input.amountMinor, method: input.method } }),
+    eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'payment_manually_confirmed', metadata: { paymentId: id, amountMinor: input.amountMinor, method: input.method, note: input.note ?? null } }),
+    notificationStmt(db, p, 'payment_success', id, input.amountMinor),
   ])
   return ok(c, { id, status: 'manually_confirmed' }, 201)
 })
@@ -207,6 +240,7 @@ admin.post('/projects/:id/access-link', async (c) => {
   if (!secret) throw new ApiError(503, 'NOT_CONFIGURED', 'LINK_SIGNING_SECRET belum dikonfigurasi')
   const p = await requireProject(db, c.req.param('id'))
   const revoke = c.req.query('revokePrevious') === 'true'
+  if (revoke && !hasRecentAuth(user)) throw new ApiError(403, 'REAUTH_REQUIRED', 'Konfirmasi ulang kata sandi untuk aksi ini')
   let version = p.access_token_version
   if (revoke) {
     version += 1
@@ -219,7 +253,7 @@ admin.post('/projects/:id/access-link', async (c) => {
 })
 
 /** Exportable project record (docs/02 FR-10). */
-admin.get('/projects/:id/export', async (c) => {
+admin.get('/projects/:id/export', requireRecentAuth, async (c) => {
   const db = c.env.DB
   const p = await requireProject(db, c.req.param('id'))
   await enforceRateLimit(db, 'export', c.get('user')!.id, 30, 3600)
@@ -325,7 +359,7 @@ admin.get('/projects/:id/payment-orders', async (c) => {
   return ok(c, { orders: (rows.results ?? []).map((o) => ({ ...publicOrder(o), failureCode: o.failure_code })), callbacks: cbs.results ?? [] })
 })
 
-admin.post('/projects/:id/payment-orders/:orderId/reconcile', async (c) => {
+admin.post('/projects/:id/payment-orders/:orderId/reconcile', requireRecentAuth, async (c) => {
   const db = c.env.DB
   const p = await requireProject(db, c.req.param('id'))
   const id = c.req.param('orderId')
@@ -336,4 +370,5 @@ admin.post('/projects/:id/payment-orders/:orderId/reconcile', async (c) => {
   return ok(c, { order: publicOrder(r.order), outcome: r.outcome })
 })
 
+admin.route('/', adminOps)
 adminRoutes.route('/', admin)

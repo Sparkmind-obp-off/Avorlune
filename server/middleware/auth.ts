@@ -30,7 +30,8 @@ export async function createSession(c: Context<AppBindings>, userId: string) {
   await c.env.DB.batch([
     // Opportunistic cleanup of expired sessions (no cron needed).
     c.env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?1').bind(nowIso()),
-    c.env.DB.prepare('INSERT INTO sessions (id_hash, user_id, csrf_token, expires_at, created_at, cred_fp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
+    // A fresh password login counts as a recent authentication (step-up window starts now).
+    c.env.DB.prepare('INSERT INTO sessions (id_hash, user_id, csrf_token, expires_at, created_at, cred_fp, reauth_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?5)')
       .bind(await sha256Hex(token), userId, csrf, expires, nowIso(), fp),
   ])
   setCookie(c, SESSION_COOKIE, token, { httpOnly: true, secure: isSecure(c), sameSite: 'Strict', path: '/api', maxAge: SESSION_TTL_SEC })
@@ -54,16 +55,37 @@ export async function loadSession(c: Context<AppBindings>): Promise<SessionUser 
   const token = getCookie(c, SESSION_COOKIE)
   if (!token || !TOKEN_RE.test(token)) return undefined
   const row = await c.env.DB.prepare(
-    `SELECT u.id, u.email, u.role, s.csrf_token, s.expires_at, s.cred_fp FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ?1`,
+    `SELECT u.id, u.email, u.role, s.csrf_token, s.expires_at, s.cred_fp, s.reauth_at, s.id_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ?1`,
   )
     .bind(await sha256Hex(token))
-    .first<{ id: string; email: string; role: string; csrf_token: string; expires_at: string; cred_fp: string | null }>()
+    .first<{ id: string; email: string; role: string; csrf_token: string; expires_at: string; cred_fp: string | null; reauth_at: string | null; id_hash: string }>()
   if (!row || row.expires_at < nowIso()) return undefined
   // C3 — single-admin mode: only the configured admin account is functional.
   if (row.role !== 'admin') return undefined
   const fp = await credentialFingerprint(c)
   if (!fp || !row.cred_fp || !safeEqual(fp, row.cred_fp)) return undefined
-  return { id: row.id, email: row.email, role: 'admin', csrfToken: row.csrf_token }
+  return { id: row.id, email: row.email, role: 'admin', csrfToken: row.csrf_token, sessionHash: row.id_hash, reauthAt: row.reauth_at }
+}
+
+/** Step-up window for sensitive operations (docs/48 §5): password re-confirmed within this many seconds. */
+export const REAUTH_WINDOW_SEC = 10 * 60
+
+export function hasRecentAuth(user: SessionUser, now = Date.now()) {
+  return !!user.reauthAt && now - Date.parse(user.reauthAt) <= REAUTH_WINDOW_SEC * 1000
+}
+
+/** Must run after requireStaff. Sensitive actions require a fresh password confirmation. */
+export const requireRecentAuth: MiddlewareHandler<AppBindings> = async (c, next) => {
+  const user = c.get('user')
+  if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Silakan masuk terlebih dahulu')
+  if (!hasRecentAuth(user)) throw new ApiError(403, 'REAUTH_REQUIRED', 'Konfirmasi ulang kata sandi untuk aksi ini')
+  await next()
+}
+
+export async function markReauthenticated(db: D1Database, user: SessionUser) {
+  const at = nowIso()
+  await db.prepare('UPDATE sessions SET reauth_at = ?1 WHERE id_hash = ?2').bind(at, user.sessionHash).run()
+  return at
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])

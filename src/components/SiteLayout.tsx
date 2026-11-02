@@ -62,6 +62,9 @@ export function SiteLayout() {
           <nav aria-label="Legal" className="footer-links">
             <Link to="/privacy">Privasi</Link>
             <Link to="/terms">Ketentuan</Link>
+            <Link to="/ai-licensing">AI &amp; Lisensi</Link>
+            <Link to="/refund-policy">Refund</Link>
+            <Link to="/pricing">Harga</Link>
             <Link to="/contact">Kontak</Link>
           </nav>
         </div>
