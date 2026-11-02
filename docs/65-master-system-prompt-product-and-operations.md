@@ -106,3 +106,12 @@ Report completed code/docs/infrastructure, exact files and commit, tests/exit st
 Never claim deployment, test success, legal clearance, payment acceptance, or R2 provisioning without evidence.
 
 **Final directive:** Build AVORLUNE as a human-supervised AI creative production service with a marketplace-like customer experience. Customers brief and approve; AVORLUNE produces using AI tools and human QA; custom work is paid 50% upfront and 50% before final delivery. Protect customer funds, data, source rights, assets, and production environments.
+
+
+## OWNER DECISION ADDENDUM — CUSTOMER PLATFORM AND ADMIN UX (2026-11-03)
+
+The approved expansion is documented in docs/66–76. Build a full-stack customer portal with Clerk customer-only sign-in, optional/skippable onboarding, public service discovery, saved briefs, project/quote/payment/production/review/delivery workspace, and a searchable customer CRM. Preserve the service-led production model and universal 50% deposit + 50% balance policy.
+
+Admin UX must not show an AVORLUNE in-app login form. This supersedes the earlier admin first-party login-screen direction. Do not remove existing admin protection until a private perimeter protects both admin frontend and every admin API route and passes tests. If no perimeter/identity/network restriction is acceptable, expose only a read-only synthetic demo and keep real CRM data/mutations inaccessible. Never expose an unauthenticated public admin API.
+
+Public demo must use synthetic data, simulated payments/production, no production D1/R2, no real customer data, no provider calls and no outbound notifications. New documents are specifications, not proof of implementation. Follow docs/70 and docs/75 for safe rollout.
