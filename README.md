@@ -179,3 +179,17 @@ New specifications:
 **Admin access decision update:** owner requests no AVORLUNE in-app admin login screen. This supersedes the older admin login UX in docs 47–50. It does not authorize a public CRM/API. Keep existing admin protection until a private perimeter protecting both UI and API is verified. If no perimeter or identity/network restriction is acceptable, only a public read-only synthetic demo may be exposed; real customer data and mutations remain private.
 
 **Status:** These are target specifications. They do not mean Clerk, the customer portal, CRM, demo, new API routes or the private perimeter have been implemented or deployed. Existing production architecture and payment/R2 safety gates remain unchanged.
+
+
+## Unified AI Product, Creative & Action Marketplace (2026-11-03)
+
+New approved concept and execution prompt:
+- [77 — Unified marketplace concept](docs/77-unified-ai-product-creative-and-action-marketplace-concept.md): AI Creative Production, AI Creative Products and AI Action Services in one curated AVORLUNE storefront; AVORLUNE remains the sole initial provider.
+- [78 — Master System Prompt: unified platform build & gap closure](docs/78-master-system-prompt-unified-platform-gap-closure.md): use this as the primary execution prompt for the complete repository, all documented gaps and implementation phases.
+- [79 — Clerk Development setup and production cutover](docs/79-clerk-development-setup-and-cutover.md): customer-only Clerk Development integration and safe Production separation.
+
+**Clerk status:** Owner reports that Development credentials have been obtained. This repository audit found no Clerk SDK dependency or Clerk middleware in the inspected current source baseline; existing customer access uses project-scoped signed links and the admin uses first-party session authentication. Clerk implementation and successful Development sign-in are therefore still pending verification. Use Development credentials only in ignored local development configuration. Never expose or commit the secret key. Production Clerk requires separate Production credentials and explicit cutover.
+
+**Marketplace boundary:** phase 1 is a curated single-provider storefront. Catalog items, offers, offer versions, quotes, orders/projects, action runs, service logs and deliverables are separate concepts. No third-party seller/freelancer marketplace or customer-facing AI tool/credit resale.
+
+Docs 77–79 are specifications/prompts; they do not mean the new marketplace, Clerk, catalog, action engine or CRM has been implemented or deployed. Follow docs/78 to audit and close the remaining gaps based on actual code and evidence.
