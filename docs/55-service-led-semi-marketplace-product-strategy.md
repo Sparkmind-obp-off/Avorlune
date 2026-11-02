@@ -40,7 +40,7 @@ Do not adopt seller registration, freelancer bidding, public worker profiles, pe
 ## Two purchase paths
 
 ### Ready-to-order
-A standardized, clearly scoped service with defined inputs, outputs, quantities, formats, revision allowance, and timing. Price may be fixed only after costs and capacity are validated. Full upfront payment is acceptable only when the complete scope and terms are visible before checkout.
+A standardized, clearly scoped service with defined inputs, outputs, quantities, formats, revision allowance, and timing. Price may be fixed only after costs and capacity are validated. Payment follows the same 50% deposit before production and 50% balance before final delivery policy as custom projects.
 
 ### Custom project
 Free brief → AVORLUNE review → quotation → customer approval → 50% deposit → production → preview/revisions → 50% balance → final delivery.
