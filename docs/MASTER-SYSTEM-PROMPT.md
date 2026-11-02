@@ -58,3 +58,12 @@ Use clear, direct Indonesian by default. Be action-oriented. Do not ask the user
 Follow docs/66–76 for the approved full-stack customer portal, customer-only Clerk authentication, optional onboarding, service discovery, brief builder, searchable customer CRM, demo isolation, API and rollout. Customers can browse publicly and sign in before submitting or viewing private data. Keep the universal 50% deposit + 50% balance rule.
 
 Owner requests no AVORLUNE app login screen for admin. Do not expose real CRM or mutation APIs publicly: retain existing admin protection until a verified private perimeter protects the UI and API. If absolutely no perimeter is allowed, expose only a read-only synthetic demo. Do not confuse no app login form with no backend authorization.
+
+
+## PRIMARY EXECUTION PROMPT — 2026-11-03
+
+Use **[docs/78-master-system-prompt-unified-platform-gap-closure.md](78-master-system-prompt-unified-platform-gap-closure.md)** as the primary master prompt for the whole AVORLUNE repository. It unifies all prior specifications and directs the agent to audit and implement every remaining gap across docs 01–77, rather than only the customer portal.
+
+The approved concept is [docs/77-unified-ai-product-creative-and-action-marketplace-concept.md](77-unified-ai-product-creative-and-action-marketplace-concept.md). Clerk Development setup and Production separation are specified in [docs/79-clerk-development-setup-and-cutover.md](79-clerk-development-setup-and-cutover.md).
+
+Owner reports Clerk Development credentials are ready. Use them only through ignored local development configuration, never in production. Existing source inspection did not find Clerk integration yet; customer access remains signed project links and admin remains first-party auth. Keep those paths safe during migration.
