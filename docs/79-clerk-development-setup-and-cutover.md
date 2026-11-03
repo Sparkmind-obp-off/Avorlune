@@ -1,6 +1,6 @@
 # 79 — Clerk Development Setup & Production Cutover
 
-**Status:** Development credentials reportedly obtained by owner; actual configuration and successful sign-in are not yet verified.
+**Status (2026-11-03):** Development instance configured on **preview only** (`https://preview.avorlune.pages.dev`). Frontend API host `exotic-koi-7642.clerk.accounts.dev`; publishable key (pk_test, browser-safe) in `wrangler.jsonc` env.preview and served via `/api/v1/account/config`. Server verifies tokens via JWKS (no SDK secret required). `CLERK_SECRET_KEY` is NOT stored in the repo or in production; optional for preview. Production has no Clerk configuration. Server-side verification covered by automated tests; an interactive sign-in by the owner on preview is still to be confirmed.
 
 ## 1. Scope
 Clerk is for customer sign-up/sign-in only. It does not authenticate AVORLUNE admin. Public browsing remains anonymous. Customers authenticate before submitting briefs and accessing private workspace data.

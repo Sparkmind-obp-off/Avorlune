@@ -4,6 +4,7 @@ import { ApiError, newId, nowIso } from '../lib/http'
 import type { ActorType } from './events'
 import type { Env } from '../env'
 import { assertValidFinalAsset, getProjectAsset } from './assets'
+import { balanceSatisfied, depositSatisfied } from './schedule'
 
 export interface ProjectRow {
   id: string
@@ -21,6 +22,8 @@ export interface ProjectRow {
   access_token_version: number
   revision_rounds_used: number
   approved_asset_id: string | null
+  customer_id?: string | null
+  offer_version_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -70,8 +73,9 @@ export async function assertTransitionAllowed(db: D1Database, p: ProjectRow, to:
     const q = await latestQuote(db, p.id)
     if (!q || !['sent', 'accepted'].includes(q.status)) throw new ApiError(409, 'QUOTE_REQUIRED', 'Kirim penawaran terlebih dahulu')
   }
-  if (to === 'queued' && !(await hasConfirmedPayment(db, p.id)) && !reason) {
-    throw new ApiError(409, 'PAYMENT_REQUIRED', 'Butuh konfirmasi pembayaran atau alasan pengecualian')
+  // Deposit (50%) must be verified before production, unless a documented exception reason is given (audited).
+  if (to === 'queued' && !(await depositSatisfied(db, p.id)) && !reason) {
+    throw new ApiError(409, 'PAYMENT_REQUIRED', 'Butuh pembayaran DP 50% terverifikasi atau alasan pengecualian')
   }
   if ((to === 'cancelled' || to === 'approved') && !reason) {
     throw new ApiError(422, 'REASON_REQUIRED', 'Alasan wajib diisi untuk transisi ini')
@@ -120,3 +124,8 @@ export async function transition(
 /** SQL suffix guard for extra statements inside a transition batch. Bind projectId, toStatus, stamp as the LAST 3 params. */
 export const GUARD_SUFFIX = (n: number) =>
   ` WHERE EXISTS (SELECT 1 FROM projects WHERE id = ?${n} AND status = ?${n + 1} AND updated_at = ?${n + 2})`
+
+/** Final delivery requires every payment milestone (incl. the 50% balance) to be verified (docs/59 §6). */
+export async function assertBalancePaid(db: D1Database, projectId: string) {
+  if (!(await balanceSatisfied(db, projectId))) throw new ApiError(409, 'BALANCE_REQUIRED', 'Pelunasan 50% belum terverifikasi; file final belum boleh dikirim')
+}

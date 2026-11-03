@@ -242,7 +242,7 @@ describe('critical end-to-end scenario (docs/15)', () => {
     expect((await ctx.call('POST', `/projects/${reference}/quote/decision`, { json: { decision: 'accepted' }, headers: h })).status).toBe(409)
 
     await patch('awaiting_payment')
-    expect((await ctx.call('POST', `/admin/projects/${id}/payments/confirm`, { json: { amountMinor: 2500000, method: 'Transfer bank', providerReference: 'TRX-TEST-1' }, headers: auth })).status).toBe(201)
+    expect((await ctx.call('POST', `/admin/projects/${id}/payments/confirm`, { json: { amountMinor: 1250000, method: 'Transfer bank', providerReference: 'TRX-DP-1' }, headers: auth })).status).toBe(201)
     await patch('queued')
     await patch('producing')
     await patch('internal_review')
@@ -271,6 +271,9 @@ describe('critical end-to-end scenario (docs/15)', () => {
     const lic = await ctx.call('POST', `/admin/projects/${id}/licenses`, { json: { assetId: fin.body.data.id, sourceType: 'ai_generated', providerSlug: 'genspark', commercialUse: 'allowed', licenseEvidence: 'Genspark Plus aktif saat generate; invoice #TEST' }, headers: auth })
     expect(lic.status).toBe(201)
     expect((await ctx.call('POST', `/admin/projects/${id}/licenses/${lic.body.data.id}/qa`, { json: { deliveryPermitted: true }, headers: auth })).status).toBe(200)
+    // Balance (50%) is required before final delivery.
+    expect((await ctx.call('PATCH', `/admin/projects/${id}/status`, { json: { toStatus: 'delivered' }, headers: auth })).body.error.code).toBe('BALANCE_REQUIRED')
+    expect((await ctx.call('POST', `/admin/projects/${id}/payments/confirm`, { json: { amountMinor: 1250000, method: 'Transfer bank', providerReference: 'TRX-BAL-1' }, headers: auth })).status).toBe(201)
     await patch('delivered')
 
     const detail = await ctx.call('GET', `/admin/projects/${id}`, { headers: auth })

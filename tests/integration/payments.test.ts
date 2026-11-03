@@ -95,10 +95,10 @@ describe('Duitku POP — checkout', () => {
     const P = await acceptedProject(ctx, auth, 2500000)
     const r = await ctx.call('POST', `/projects/${P.reference}/payments/checkout`, { json: { amountMinor: 1 }, headers: P.h })
     expect(r.status).toBe(201)
-    expect(r.body.data.order).toMatchObject({ amountMinor: 2500000, status: 'pending' })
+    expect(r.body.data.order).toMatchObject({ amountMinor: 1250000, status: 'pending' }) // 50% deposit of 2.5M
     expect(r.body.data.popScript).toBe('https://app-sandbox.duitku.com/lib/js/duitku.js')
     const inv = fake.calls.find((c) => c.url.includes('createInvoice'))!
-    expect(inv.body).toMatchObject({ paymentAmount: 2500000, email: 'sinta@example.test', callbackUrl: 'https://avorlune.test/api/v1/payments/duitku/callback' })
+    expect(inv.body).toMatchObject({ paymentAmount: 1250000, email: 'sinta@example.test', callbackUrl: 'https://avorlune.test/api/v1/payments/duitku/callback' })
     expect(JSON.stringify(inv.body)).not.toContain(DUITKU_TEST.apiKey)
     const again = await ctx.call('POST', `/projects/${P.reference}/payments/checkout`, { json: {}, headers: P.h })
     expect(again.status).toBe(200)
@@ -118,7 +118,7 @@ describe('Duitku POP — checkout', () => {
     const { id } = ctx.raw.prepare('SELECT id FROM projects WHERE public_reference = ?').get(ref) as { id: string }
     const link = await ctx.call('POST', `/admin/projects/${id}/access-link`, { json: {}, headers: auth })
     const t = (link.body.data.url as string).split('#t=')[1]
-    expect((await ctx.call('POST', `/projects/${ref}/payments/checkout`, { json: {}, headers: { 'x-project-token': t } })).body.error.code).toBe('NOT_PAYABLE')
+    expect((await ctx.call('POST', `/projects/${ref}/payments/checkout`, { json: {}, headers: { 'x-project-token': t } })).body.error.code).toBe('QUOTE_NOT_ACCEPTED')
   })
   it('provider failure is surfaced as 502 and the order is marked failed', async () => {
     ctx = await setup({ duitku: true })
@@ -146,10 +146,10 @@ describe('Duitku POP — callback & settlement', () => {
   it('rejects bad signature, wrong merchant, missing params, unknown order, amount mismatch — nothing is paid', async () => {
     const O = await pendingOrder()
     const mo = O.order.merchantOrderId
-    expect((await ctx.form('/payments/duitku/callback', callbackFields(mo, 1500000, '00', 'f'.repeat(64)))).status).toBe(400)
-    expect((await ctx.form('/payments/duitku/callback', { ...callbackFields(mo, 1500000), merchantCode: 'DEVIL1' })).status).toBe(400)
+    expect((await ctx.form('/payments/duitku/callback', callbackFields(mo, 750000, '00', 'f'.repeat(64)))).status).toBe(400)
+    expect((await ctx.form('/payments/duitku/callback', { ...callbackFields(mo, 750000), merchantCode: 'DEVIL1' })).status).toBe(400)
     expect((await ctx.form('/payments/duitku/callback', { merchantOrderId: mo })).status).toBe(400)
-    expect((await ctx.form('/payments/duitku/callback', callbackFields('AVL-NOPE-1234', 1500000))).status).toBe(404)
+    expect((await ctx.form('/payments/duitku/callback', callbackFields('AVL-NOPE-1234', 750000))).status).toBe(404)
     expect((await ctx.form('/payments/duitku/callback', callbackFields(mo, 1000))).text).toBe('Amount Mismatch')
     expect(paymentsCount()).toBe(0)
     expect(projectStatus(O.id)).toBe('quoted')
@@ -160,21 +160,21 @@ describe('Duitku POP — callback & settlement', () => {
   it('a validly-signed "success" callback is NOT trusted until Duitku transactionStatus confirms', async () => {
     const O = await pendingOrder()
     // Duitku still reports pending (01) → forged/early success must not settle.
-    const r = await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 1500000, '00'))
+    const r = await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 750000, '00'))
     expect(r.status).toBe(409)
     expect(paymentsCount()).toBe(0)
   })
 
   it('confirmed success settles exactly once, records a gateway payment and queues production; duplicates are idempotent', async () => {
     const O = await pendingOrder()
-    fake.state.set(O.order.merchantOrderId, { status: '00', amount: 1500000 })
-    const first = await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 1500000))
+    fake.state.set(O.order.merchantOrderId, { status: '00', amount: 750000 })
+    const first = await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 750000))
     expect(first).toEqual({ status: 200, text: 'SUCCESS' })
-    const dup = await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 1500000))
+    const dup = await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 750000))
     expect(dup.status).toBe(200)
     expect(paymentsCount()).toBe(1)
     const pay = ctx.raw.prepare('SELECT status, amount_minor, method, confirmed_by FROM payments').get() as Record<string, unknown>
-    expect(pay).toEqual({ status: 'paid', amount_minor: 1500000, method: 'duitku:SP', confirmed_by: null })
+    expect(pay).toEqual({ status: 'paid', amount_minor: 750000, method: 'duitku:SP', confirmed_by: null })
     expect(projectStatus(O.id)).toBe('queued')
     const ev = ctx.raw.prepare(`SELECT event_type, actor_type FROM project_events WHERE project_id = ? AND event_type IN ('payment_gateway_confirmed','status_changed') ORDER BY created_at DESC LIMIT 2`).all(O.id) as { event_type: string; actor_type: string }[]
     expect(ev.map((e) => e.actor_type)).toEqual(['system', 'system'])
@@ -186,11 +186,11 @@ describe('Duitku POP — callback & settlement', () => {
 
   it('failed callback marks the order failed; Duitku-reported amount mismatch never settles', async () => {
     const O = await pendingOrder()
-    expect((await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 1500000, '01'))).status).toBe(200)
+    expect((await ctx.form('/payments/duitku/callback', callbackFields(O.order.merchantOrderId, 750000, '01'))).status).toBe(200)
     expect((ctx.raw.prepare('SELECT status FROM payment_orders').get() as { status: string }).status).toBe('failed')
     const O2 = await pendingOrder(900000)
     fake.state.set(O2.order.merchantOrderId, { status: '00', amount: 1 })
-    expect((await ctx.form('/payments/duitku/callback', callbackFields(O2.order.merchantOrderId, 900000))).status).toBe(409)
+    expect((await ctx.form('/payments/duitku/callback', callbackFields(O2.order.merchantOrderId, 450000))).status).toBe(409)
     expect(paymentsCount()).toBe(0)
   })
 
@@ -198,11 +198,11 @@ describe('Duitku POP — callback & settlement', () => {
     const O = await pendingOrder()
     const refresh = () => ctx.call('POST', `/projects/${O.reference}/payments/${O.order.id}/refresh`, { json: {}, headers: O.h })
     expect((await refresh()).body.data.outcome).toBe('pending')
-    fake.state.set(O.order.merchantOrderId, { status: '00', amount: 1500000 })
+    fake.state.set(O.order.merchantOrderId, { status: '00', amount: 750000 })
     expect((await refresh()).body.data).toMatchObject({ outcome: 'paid', order: { status: 'paid' } })
     expect(projectStatus(O.id)).toBe('queued')
     const O2 = await pendingOrder()
-    fake.state.set(O2.order.merchantOrderId, { status: '02', amount: 1500000 })
+    fake.state.set(O2.order.merchantOrderId, { status: '02', amount: 750000 })
     expect((await ctx.call('POST', `/admin/projects/${O2.id}/payment-orders/${O2.order.id}/reconcile`, { json: {}, headers: O2.auth })).body.data.outcome).toBe('cancelled')
     const O3 = await pendingOrder()
     ctx.raw.prepare(`UPDATE payment_orders SET expires_at = '2000-01-01T00:00:00.000Z'`).run()

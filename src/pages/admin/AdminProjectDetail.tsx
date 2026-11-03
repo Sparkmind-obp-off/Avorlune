@@ -6,6 +6,7 @@ import {
   BUDGET_LABELS, COST_KINDS, COST_LABELS, DEADLINE_LABELS, REASON_REQUIRED_TARGETS, SERVICE_LABELS, STATUS_LABELS, TRANSITIONS, formatIDR,
   type ProjectStatus, type ServiceType,
 } from '../../../shared/domain'
+import { ActionRunsPanel, SchedulePanel, nextUnpaid, type AdminSchedule } from './AdminPlatform'
 
 interface Detail {
   project: {
@@ -26,6 +27,7 @@ interface Detail {
   licenses: { id: string; asset_id: string | null; source_type: string; provider_slug: string | null; provider_reference: string | null; commercial_use: string; license_name: string | null; license_evidence: string | null; restrictions: string | null; delivery_permitted: number; qa_approved_at: string | null; created_at: string }[]
   notifications: { id: string; event: string; channel: string; subject: string; status: string; attempts: number; last_error: string | null; created_at: string; sent_at: string | null }[]
   supportTickets: { id: string; category: string; message: string; status: string; resolution_note: string | null; created_at: string; resolved_at: string | null }[]
+  schedule?: AdminSchedule | null
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -116,6 +118,8 @@ export function AdminProjectDetail() {
             ))}
           </article>
 
+          <ActionRunsPanel projectId={id} projectStatus={p.status} />
+
           <LicensePanel d={d} busy={busy}
             onCreate={(body) => run(() => api(`/admin/projects/${id}/licenses`, { method: 'POST', json: body }), 'Catatan lisensi disimpan.')}
             onQa={(licenseId, deliveryPermitted) => run(() => api(`/admin/projects/${id}/licenses/${licenseId}/qa`, { method: 'POST', json: { deliveryPermitted } }), deliveryPermitted ? 'QA: pengiriman diizinkan.' : 'QA: pengiriman tidak diizinkan.')} />
@@ -164,7 +168,9 @@ export function AdminProjectDetail() {
 
           <GatewayPanel projectId={id} busy={busy} onReconcile={(orderId) => run(() => api(`/admin/projects/${id}/payment-orders/${orderId}/reconcile`, { method: 'POST', json: {} }), 'Status order dicek ke Duitku.')} />
 
-          <PaymentPanel payments={d.payments} busy={busy} onConfirm={(body) => run(() => api(`/admin/projects/${id}/payments/confirm`, { method: 'POST', json: body }), 'Pembayaran dicatat.')} />
+          <SchedulePanel schedule={d.schedule} />
+
+          <PaymentPanel payments={d.payments} expected={nextUnpaid(d.schedule)?.amountMinor ?? null} busy={busy} onConfirm={(body) => run(() => api(`/admin/projects/${id}/payments/confirm`, { method: 'POST', json: body }), 'Pembayaran dicatat.')} />
 
           <RefundPanel d={d} busy={busy}
             onRequest={(body) => run(() => api(`/admin/projects/${id}/refunds`, { method: 'POST', json: body }), 'Refund diajukan.')}
@@ -393,8 +399,9 @@ function QuotePanel({ d, busy, onCreate }: { d: Detail; busy: boolean; onCreate:
   )
 }
 
-function PaymentPanel({ payments, busy, onConfirm }: { payments: Detail['payments']; busy: boolean; onConfirm: (b: { amountMinor: number; method: string; providerReference?: string }) => void }) {
+function PaymentPanel({ payments, expected, busy, onConfirm }: { payments: Detail['payments']; expected: number | null; busy: boolean; onConfirm: (b: { amountMinor: number; method: string; providerReference?: string }) => void }) {
   const [amount, setAmount] = useState('')
+  useEffect(() => { setAmount(expected ? String(expected) : '') }, [expected])
   const [method, setMethod] = useState('Transfer bank')
   const [ref, setRef] = useState('')
   return (
@@ -404,7 +411,7 @@ function PaymentPanel({ payments, busy, onConfirm }: { payments: Detail['payment
         <ul className="small plain">{payments.map((p) => <li key={p.id}>{formatIDR(p.amount_minor)} · {p.method} · {formatDate(p.confirmed_at)} <span className="tag">{p.status}</span></li>)}</ul>
       )}
       <form onSubmit={(e) => { e.preventDefault(); if (!confirm('Konfirmasi bahwa dana benar-benar sudah diterima?')) return; onConfirm({ amountMinor: Math.round(Number(amount.replace(/[^\d]/g, '')) || 0), method, providerReference: ref || undefined }); setAmount(''); setRef('') }}>
-        <Field id="payAmount" label="Jumlah diterima (IDR)" required><input id="payAmount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field id="payAmount" label="Jumlah diterima (IDR)" required hint={expected ? `Harus sama dengan tagihan berikutnya: ${formatIDR(expected)}` : 'Tidak ada tagihan terbuka (jadwal belum dibuat atau sudah lunas).'}><input id="payAmount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field id="payMethod" label="Metode" required><input id="payMethod" value={method} onChange={(e) => setMethod(e.target.value)} /></Field>
         <Field id="payRef" label="Referensi transaksi"><input id="payRef" value={ref} onChange={(e) => setRef(e.target.value)} /></Field>
         <button className="btn btn-ghost btn-sm btn-block" disabled={busy || !amount}>Catat konfirmasi manual</button>

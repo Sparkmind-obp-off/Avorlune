@@ -15,6 +15,16 @@ export const setCsrf = (t: string | null) => {
   csrfToken = t
 }
 
+/** Customer session token getter (Clerk). Attached only to non-admin API calls that do not carry a project link token. */
+let authTokenGetter: (() => Promise<string | null>) | null = null
+export const setAuthTokenGetter = (fn: (() => Promise<string | null>) | null) => {
+  authTokenGetter = fn
+}
+async function customerBearer(path: string, projectToken?: string) {
+  if (projectToken || path.startsWith('/admin') || !authTokenGetter) return null
+  try { return await authTokenGetter() } catch { return null }
+}
+
 /** Step-up handler (admin): asks for the password again; resolves true when re-authenticated. */
 let reauthHandler: (() => Promise<boolean>) | null = null
 export const setReauthHandler = (fn: (() => Promise<boolean>) | null) => {
@@ -27,6 +37,8 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown;
   if (init.json !== undefined) headers.set('content-type', 'application/json')
   if (csrfToken && init.method && init.method !== 'GET') headers.set('x-csrf-token', csrfToken)
   if (init.projectToken) headers.set('x-project-token', init.projectToken)
+  const bearer = await customerBearer(path, init.projectToken)
+  if (bearer) headers.set('authorization', `Bearer ${bearer}`)
   let res: Response
   try {
     res = await fetch(`/api/v1${path}`, {
@@ -69,6 +81,8 @@ export async function uploadBinary<T>(path: string, file: File): Promise<T> {
 export async function downloadFile(path: string, filename: string, projectToken?: string) {
   const headers = new Headers()
   if (projectToken) headers.set('x-project-token', projectToken)
+  const bearer = await customerBearer(path, projectToken)
+  if (bearer) headers.set('authorization', `Bearer ${bearer}`)
   const res = await fetch(`/api/v1${path}`, { headers, credentials: 'same-origin' }).catch(() => null)
   if (!res || !res.ok) {
     const payload = res ? await res.json().catch(() => null) : null

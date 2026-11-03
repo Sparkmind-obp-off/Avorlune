@@ -59,7 +59,7 @@ Architecture and implementation documents:
 | Duitku POP payment | Checkout from the customer portal (amount from accepted quote, invoice reuse, 60-min expiry), signed callback + amount check + server-to-server status before settling once → `queued`; admin gateway status probe (masked), order list, reconcile. **Deployed with checkout OFF; LIVE production authentication diagnostics remain unresolved. Owner confirms supplied credentials are LIVE/PRODUCTION; errors do not mean they are sandbox. See `docs/46` and `docs/52`.** |
 | Business operations | Step-up re-auth for sensitive admin actions; manual refund workflow; notification outbox (manual send until email provider approved); asset licensing/provenance registry with delivery gate; support tickets; admin dashboard (`docs/54`). |
 | Legal pages (DRAFT) | `/terms`, `/privacy`, `/ai-licensing` (AI commercial use + copyright, official sources), `/refund-policy`, `/pricing` (quote-based, no invented prices). |
-| Tests | 100 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
+| Tests | 118 Vitest tests (unit + API integration on a SQLite-backed D1 shim + in-memory R2 stand-in). `npm audit --omit=dev`: 0 vulnerabilities. |
 
 ### Not yet implemented / blocked
 - **Two separate frontend deployments and shared Worker API** — approved target architecture; current admin still lives under `/admin` in the customer Pages deployment.
@@ -193,3 +193,11 @@ New approved concept and execution prompt:
 **Marketplace boundary:** phase 1 is a curated single-provider storefront. Catalog items, offers, offer versions, quotes, orders/projects, action runs, service logs and deliverables are separate concepts. No third-party seller/freelancer marketplace or customer-facing AI tool/credit resale.
 
 Docs 77–79 are specifications/prompts; they do not mean the new marketplace, Clerk, catalog, action engine or CRM has been implemented or deployed. Follow docs/78 to audit and close the remaining gaps based on actual code and evidence.
+
+## Implemented 2026-11-03 (docs/80)
+- Customer accounts via **Clerk Development** (preview only): `/sign-in`, `/sign-up`, `/account` (onboarding skippable, saved brief draft, my projects).
+- Unified catalog `/catalog`, `/catalog/:slug` (offer versions immutable; prices `quote_required` until evidenced).
+- **50% DP + 50% pelunasan**: DP before production, balance before final delivery/download.
+- Action services with human-in-the-loop and customer authorization; CRM (admin → Pelanggan), catalog admin (admin → Katalog); public synthetic `/demo`.
+- API additions: `GET /api/v1/account/config`, `/account/me*`, `GET /catalog*`, `POST /projects/:ref/actions/:runId/authorize`, admin `/customers*`, `/catalog*`, `/projects/:id/actions*`.
+- Preview uses its own D1 `avorlune-preview`. Remaining approvals: Duitku key, Clerk production, R2, Resend, legal review.

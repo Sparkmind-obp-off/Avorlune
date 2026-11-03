@@ -10,7 +10,10 @@ let cachedHash: string | null = null
 
 export const DUITKU_TEST = { merchantCode: 'DTEST1', apiKey: 'test-duitku-api-key-0123456789abcdef' }
 
-export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: string | null; noDb?: boolean; duitku?: boolean; checkout?: boolean } = {}) {
+export const CLERK_TEST = { host: 'test-instance.clerk.accounts.dev', origin: 'https://avorlune.test' }
+export const CLERK_TEST_PK = `pk_test_${Buffer.from(`${CLERK_TEST.host}$`).toString('base64')}`
+
+export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: string | null; noDb?: boolean; duitku?: boolean; checkout?: boolean; clerk?: boolean; briefRequiresAccount?: boolean } = {}) {
   cachedHash ??= await hashPassword(ADMIN_PASSWORD, 10_000)
   const { d1, raw } = createTestD1()
   const marker = opts.marker === undefined ? 'test' : opts.marker
@@ -23,6 +26,7 @@ export async function setup(opts: { assets?: boolean; appEnv?: string; marker?: 
     ADMIN_EMAIL,
     ADMIN_PASSWORD_HASH: cachedHash,
     ...(opts.assets ? { DELIVERY_BUCKET: mem.store } : {}),
+    ...(opts.clerk ? { CLERK_PUBLISHABLE_KEY: CLERK_TEST_PK, CLERK_AUTHORIZED_PARTIES: CLERK_TEST.origin, ...(opts.briefRequiresAccount ? { CUSTOMER_AUTH_REQUIRED_FOR_BRIEF: 'true' } : {}) } : {}),
     ...(opts.duitku ? { DUITKU_ENV: 'sandbox', DUITKU_MERCHANT_CODE: DUITKU_TEST.merchantCode, DUITKU_API_KEY: DUITKU_TEST.apiKey, DUITKU_CHECKOUT_ENABLED: opts.checkout === false ? 'false' : 'true' } : {}),
   }
   const app = createApp()
@@ -103,7 +107,16 @@ export async function toCustomerReview(ctx: Awaited<ReturnType<typeof setup>>, a
   const link = await ctx.call('POST', `/admin/projects/${id}/access-link`, { json: {}, headers: auth })
   const token = (link.body.data.url as string).split('#t=')[1]
   await ctx.call('POST', `/projects/${reference}/quote/decision`, { json: { decision: 'accepted' }, headers: { 'x-project-token': token } })
-  await ctx.call('POST', `/admin/projects/${id}/payments/confirm`, { json: { amountMinor: 1000000, method: 'Transfer bank' }, headers: auth })
+  // 50/50 schedule: the deposit (50%) is what unlocks production.
+  const dep = await ctx.call('POST', `/admin/projects/${id}/payments/confirm`, { json: { amountMinor: 500000, method: 'Transfer bank' }, headers: auth })
+  if (dep.status !== 201) throw new Error(`deposit: ${JSON.stringify(dep.body)}`)
   for (const s of ['awaiting_payment', 'queued', 'producing', 'internal_review', 'customer_review']) await patch(s)
   return { id, reference, token, patch }
+}
+
+/** Record the 50% balance (manual, audited) — required before final delivery. */
+export async function payBalance(ctx: Awaited<ReturnType<typeof setup>>, auth: Record<string, string>, projectId: string, amountMinor = 500000) {
+  const r = await ctx.call('POST', `/admin/projects/${projectId}/payments/confirm`, { json: { amountMinor, method: 'Transfer bank' }, headers: auth })
+  if (r.status !== 201) throw new Error(`balance: ${JSON.stringify(r.body)}`)
+  return r
 }

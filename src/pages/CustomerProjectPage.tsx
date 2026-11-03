@@ -13,14 +13,19 @@ interface CustomerProject {
   feedback: { id: string; message: string; revision_round: number; within_scope: number; created_at: string }[]
   deliveryEnabled: boolean
   payment: PaymentInfo
+  actionRuns: { id: string; title: string; objective: string; allowedOperations: string; status: string; requiresAuthorization: boolean; externalSideEffect: boolean; authorizedAt: string | null; resultSummary: string | null; steps: { toStatus: string; note: string | null; at: string }[] }[]
   support: { id: string; category: string; status: string; created_at: string; resolved_at: string | null; resolution_note: string | null }[]
   refunds: { id: string; amount_minor: number; status: string; created_at: string; resolved_at: string | null }[]
-  assets: AssetInfo[]
+  assets: (AssetInfo & { locked?: boolean })[]
   approvedAssetId: string | null
   actions: { canDecideQuote: boolean; canSubmitFeedback: boolean; canApprove: boolean }
 }
 
 const TOKEN_KEY = (ref: string) => `avl_pt_${ref}`
+const RUN_LABELS: Record<string, string> = {
+  awaiting_authorization: 'Menunggu persetujuan Anda', queued: 'Antrean', manual_in_progress: 'Dikerjakan', review: 'Review internal',
+  completed: 'Selesai', failed: 'Tertunda — tim akan menghubungi', cancelled: 'Dibatalkan',
+}
 
 function useProjectToken(reference: string) {
   const [token] = useState(() => {
@@ -118,6 +123,27 @@ export function CustomerProjectPage() {
 
         {data.payment && <PaymentPanel reference={data.reference} token={token} payment={data.payment} onChanged={load} />}
 
+        {data.actionRuns?.length > 0 && (
+          <article className="panel" id="action-runs">
+            <h2 className="h4">Aksi layanan</h2>
+            <ul className="ops-list">
+              {data.actionRuns.map((r) => (
+                <li key={r.id}>
+                  <strong>{r.title}</strong> <span className="tag">{RUN_LABELS[r.status] ?? r.status}</span>
+                  <p className="small">{r.objective}</p>
+                  <p className="small muted">Yang akan kami lakukan: {r.allowedOperations}{r.externalSideEffect ? ' · berdampak ke layanan pihak ketiga' : ''}</p>
+                  {r.status === 'awaiting_authorization' && (
+                    <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => confirm(`Setujui aksi ini sesuai lingkup di atas?\n\n${r.allowedOperations}`) && act(`/actions/${r.id}/authorize`, { confirm: true }, 'Aksi disetujui dan masuk antrean.')}>Setujui aksi</button>
+                  )}
+                  {r.resultSummary && <p className="small">Hasil: {r.resultSummary}</p>}
+                  {r.steps.length > 0 && <ul className="small plain">{r.steps.map((st, i) => <li key={i}>{formatDate(st.at, true)} · {RUN_LABELS[st.toStatus] ?? st.toStatus}{st.note ? ` — ${st.note}` : ''}</li>)}</ul>}
+                </li>
+              ))}
+            </ul>
+            <p className="small muted">Kami tidak pernah meminta kata sandi, cookie atau kode OTP akun Anda.</p>
+          </article>
+        )}
+
         {data.assets.length > 0 && (
           <article className="panel" id="files-panel">
             <h2 className="h4">File proyek</h2>
@@ -129,7 +155,9 @@ export function CustomerProjectPage() {
                     {data.approvedAssetId === a.id && <span className="tag t-accepted">Disetujui</span>}
                     <div className="small muted">{formatBytes(a.sizeBytes)} · {formatDate(a.createdAt, true)}</div>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => dl(a)}>Unduh</button>
+                  {a.locked
+                    ? <span className="small muted" title="Tersedia setelah pelunasan 50% terverifikasi">Terkunci — menunggu pelunasan</span>
+                    : <button className="btn btn-ghost btn-sm" onClick={() => dl(a)}>Unduh</button>}
                 </li>
               ))}
             </ul>

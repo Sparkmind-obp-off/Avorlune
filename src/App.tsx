@@ -12,6 +12,9 @@ import { AiLicensingPage, PricingPage, PrivacyPage, RefundPolicyPage, TermsPage 
 import { CustomerProjectPage } from './pages/CustomerProjectPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminApp } from './pages/admin/AdminApp'
+import { AccountPage, SignInPage, SignUpPage } from './pages/AccountPages'
+import { CatalogDetailPage, CatalogPage } from './pages/CatalogPages'
+import { DemoPage } from './pages/DemoPage'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -39,6 +42,12 @@ export default function App() {
           <Route path="ai-licensing" element={<AiLicensingPage />} />
           <Route path="refund-policy" element={<RefundPolicyPage />} />
           <Route path="pricing" element={<PricingPage />} />
+          <Route path="catalog" element={<CatalogPage />} />
+          <Route path="catalog/:slug" element={<CatalogDetailPage />} />
+          <Route path="demo" element={<DemoPage />} />
+          <Route path="sign-in/*" element={<SignInPage />} />
+          <Route path="sign-up/*" element={<SignUpPage />} />
+          <Route path="account" element={<AccountPage />} />
           <Route path="p/:reference" element={<CustomerProjectPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

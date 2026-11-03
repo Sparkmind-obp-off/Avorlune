@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAdmin, setup, toCustomerReview, validInquiry } from '../helpers/app'
+import { ADMIN_EMAIL, ADMIN_PASSWORD, loginAdmin, payBalance, setup, toCustomerReview, validInquiry } from '../helpers/app'
 import { EXE, MP4, PNG } from '../helpers/store'
 import { hashPassword } from '../../server/lib/crypto'
 import { redact } from '../../server/lib/log'
@@ -167,6 +167,9 @@ describe('A3 — private file delivery', () => {
     const fa = await ctx.upload(A.id, 'final', PNG, auth)
     const fb = await ctx.upload(B.id, 'final', PNG, auth)
     const dl = (ref: string, assetId: string, token?: string) => ctx.call('GET', `/projects/${ref}/assets/${assetId}/download`, { headers: token ? { 'x-project-token': token } : {} })
+    // Final files are locked until the 50% balance is verified.
+    expect((await dl(A.reference, fa.body.data.id, A.token)).body.error.code).toBe('BALANCE_REQUIRED')
+    await payBalance(ctx, auth, A.id)
     const good = await dl(A.reference, fa.body.data.id, A.token)
     expect(good.status).toBe(200)
     expect(Array.from(good.bytes!)).toEqual(Array.from(PNG))
@@ -293,7 +296,8 @@ describe('D4 — cost ledger', () => {
     expect((await ctx.call('POST', `/admin/projects/${A.id}/costs`, { json: { kind: 'labor', minutes: 240, amountMinor: 200000 }, headers: auth })).status).toBe(201)
     expect((await ctx.call('POST', `/admin/projects/${A.id}/costs`, { json: { kind: 'tool' }, headers: auth })).status).toBe(422)
     const d = await ctx.call('GET', `/admin/projects/${A.id}`, { headers: auth })
-    expect(d.body.data.economics).toMatchObject({ revenueConfirmed: 1000000, directCost: 150000, laborCost: 200000, laborMinutes: 240, grossContribution: 650000 })
+    // Only the 50% deposit is confirmed at this stage.
+    expect(d.body.data.economics).toMatchObject({ revenueConfirmed: 500000, directCost: 150000, laborCost: 200000, laborMinutes: 240, grossContribution: 150000 })
   })
 })
 

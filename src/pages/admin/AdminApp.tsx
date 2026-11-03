@@ -6,6 +6,7 @@ import { api, ApiFailure, setCsrf, setReauthHandler } from '../../lib/api'
 import { AdminInbox } from './AdminInbox'
 import { AdminProjectDetail } from './AdminProjectDetail'
 import { AdminDashboard, AdminNotifications, AdminProviders, AdminSupport } from './AdminOps'
+import { AdminCatalog, AdminCustomerDetail, AdminCustomers } from './AdminPlatform'
 
 interface Me { email: string; role: string; csrfToken: string }
 const AuthCtx = createContext<{ me: Me | null; logout: () => Promise<void> }>({ me: null, logout: async () => {} })
@@ -56,6 +57,8 @@ export function AdminApp() {
         <nav className="admin-nav" aria-label="Navigasi studio">
           <NavLink to="/admin" end>Inbox</NavLink>
           <NavLink to="/admin/dashboard">Dashboard</NavLink>
+          <NavLink to="/admin/customers">Pelanggan</NavLink>
+          <NavLink to="/admin/catalog">Katalog</NavLink>
           <NavLink to="/admin/notifications">Notifikasi</NavLink>
           <NavLink to="/admin/support">Dukungan</NavLink>
           <NavLink to="/admin/providers">Provider &amp; lisensi</NavLink>
@@ -68,6 +71,9 @@ export function AdminApp() {
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="support" element={<AdminSupport />} />
             <Route path="providers" element={<AdminProviders />} />
+            <Route path="customers" element={<AdminCustomers />} />
+            <Route path="customers/:id" element={<AdminCustomerDetail />} />
+            <Route path="catalog" element={<AdminCatalog />} />
             <Route path="projects/:id" element={<AdminProjectDetail />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>

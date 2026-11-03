@@ -103,6 +103,8 @@ export const inquirySchema = z
     // Anti-spam: honeypot must stay empty; formStartedAt is the client timestamp (ms) when the form was rendered.
     website: z.string().max(0).optional().default(''),
     formStartedAt: z.number().int().positive().optional(),
+    /** Optional catalog offer the brief starts from (resolved server-side to the current offer version). */
+    offerSlug: z.string().regex(/^[a-z0-9-]{2,60}$/).optional().or(z.literal('').transform(() => undefined)),
   })
   .superRefine((v, ctx) => {
     if (v.contactMethod === 'email' && !z.string().email().safeParse(v.contactValue).success) {

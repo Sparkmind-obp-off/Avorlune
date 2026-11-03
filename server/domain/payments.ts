@@ -6,6 +6,7 @@ import { eventStmt } from './events'
 import { enqueueNotification } from './notifications'
 import { getProjectById, transition, type ProjectRow } from './projects'
 import { logEvent } from '../lib/log'
+import { nextPayableMilestone } from './schedule'
 
 export const PAYABLE_STATUSES = ['quoted', 'awaiting_payment'] as const
 export const ORDER_EXPIRY_MINUTES = 60
@@ -14,10 +15,11 @@ export interface PaymentOrderRow {
   id: string; project_id: string; quote_id: string; provider_env: string; merchant_order_id: string; amount_minor: number
   status: 'created' | 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled'; provider_reference: string | null; payment_url: string | null
   payment_code: string | null; failure_code: string | null; expires_at: string; paid_at: string | null; created_at: string; updated_at: string
+  milestone_id?: string | null
 }
 
 export function publicOrder(o: PaymentOrderRow) {
-  return { id: o.id, merchantOrderId: o.merchant_order_id, amountMinor: o.amount_minor, status: o.status, paymentCode: o.payment_code, expiresAt: o.expires_at, paidAt: o.paid_at, createdAt: o.created_at, environment: o.provider_env }
+  return { id: o.id, milestoneId: o.milestone_id ?? null, merchantOrderId: o.merchant_order_id, amountMinor: o.amount_minor, status: o.status, paymentCode: o.payment_code, expiresAt: o.expires_at, paidAt: o.paid_at, createdAt: o.created_at, environment: o.provider_env }
 }
 
 function providerError(e: unknown): never {
@@ -32,17 +34,17 @@ function providerError(e: unknown): never {
 export async function startCheckout(env: Env, db: D1Database, p: ProjectRow, origin: string, email: string) {
   const cfg = getDuitkuConfig(env)
   if (!cfg) throw new ApiError(409, 'PAYMENTS_DISABLED', 'Pembayaran online belum aktif')
-  if (!(PAYABLE_STATUSES as readonly string[]).includes(p.status)) throw new ApiError(409, 'NOT_PAYABLE', 'Proyek ini tidak sedang menunggu pembayaran')
-  const q = await db.prepare(`SELECT id, amount_minor, scope_json FROM quotes WHERE project_id = ?1 AND status = 'accepted' ORDER BY accepted_at DESC LIMIT 1`).bind(p.id).first<{ id: string; amount_minor: number }>()
+  const q = await db.prepare(`SELECT id, amount_minor FROM quotes WHERE project_id = ?1 AND status = 'accepted' ORDER BY accepted_at DESC LIMIT 1`).bind(p.id).first<{ id: string; amount_minor: number }>()
   if (!q || q.amount_minor <= 0) throw new ApiError(409, 'QUOTE_NOT_ACCEPTED', 'Setujui penawaran terlebih dahulu')
-  const paid = await db.prepare(`SELECT COUNT(*) n FROM payment_orders WHERE project_id = ?1 AND status = 'paid'`).bind(p.id).first<{ n: number }>()
-  if ((paid?.n ?? 0) > 0) throw new ApiError(409, 'ALREADY_PAID', 'Pembayaran untuk proyek ini sudah diterima')
+  // 50/50 schedule: the server picks the milestone (deposit before production, balance once a preview is ready). Client never chooses.
+  const ms = await nextPayableMilestone(db, p.id, p.status)
+  if (!ms) throw new ApiError(409, 'NOT_PAYABLE', 'Tidak ada termin pembayaran yang dapat dibayar pada tahap ini')
 
-  // Idempotency: reuse a still-valid pending invoice for the same quote and amount.
+  // Idempotency: reuse a still-valid pending invoice for the same milestone and amount.
   const now = nowIso()
   const existing = await db
-    .prepare(`SELECT * FROM payment_orders WHERE project_id = ?1 AND quote_id = ?2 AND amount_minor = ?3 AND provider_env = ?4 AND status = 'pending' AND expires_at > ?5 ORDER BY created_at DESC LIMIT 1`)
-    .bind(p.id, q.id, q.amount_minor, cfg.env, new Date(Date.now() + 5 * 60_000).toISOString())
+    .prepare(`SELECT * FROM payment_orders WHERE project_id = ?1 AND milestone_id = ?2 AND amount_minor = ?3 AND provider_env = ?4 AND status = 'pending' AND expires_at > ?5 ORDER BY created_at DESC LIMIT 1`)
+    .bind(p.id, ms.id, ms.amount_minor, cfg.env, new Date(Date.now() + 5 * 60_000).toISOString())
     .first<PaymentOrderRow>()
   if (existing?.provider_reference) return { order: existing, reference: existing.provider_reference, cfg, reused: true }
 
@@ -50,15 +52,15 @@ export async function startCheckout(env: Env, db: D1Database, p: ProjectRow, ori
   const merchantOrderId = `${p.public_reference}-${toHex(randomBytes(4))}`
   const expiresAt = new Date(Date.now() + ORDER_EXPIRY_MINUTES * 60_000).toISOString()
   await db.batch([
-    db.prepare(`INSERT INTO payment_orders (id, project_id, quote_id, provider, provider_env, merchant_order_id, amount_minor, currency, status, expires_at, created_at, updated_at)
-                VALUES (?1, ?2, ?3, 'duitku', ?4, ?5, ?6, 'IDR', 'created', ?7, ?8, ?8)`).bind(id, p.id, q.id, cfg.env, merchantOrderId, q.amount_minor, expiresAt, now),
-    eventStmt(db, { projectId: p.id, actorType: 'customer', eventType: 'payment_order_created', metadata: { orderId: id, merchantOrderId, amountMinor: q.amount_minor, provider: 'duitku', env: cfg.env } }),
+    db.prepare(`INSERT INTO payment_orders (id, project_id, quote_id, provider, provider_env, merchant_order_id, amount_minor, currency, status, expires_at, created_at, updated_at, milestone_id)
+                VALUES (?1, ?2, ?3, 'duitku', ?4, ?5, ?6, 'IDR', 'created', ?7, ?8, ?8, ?9)`).bind(id, p.id, q.id, cfg.env, merchantOrderId, ms.amount_minor, expiresAt, now, ms.id),
+    eventStmt(db, { projectId: p.id, actorType: 'customer', eventType: 'payment_order_created', metadata: { orderId: id, merchantOrderId, amountMinor: ms.amount_minor, milestone: ms.kind, provider: 'duitku', env: cfg.env } }),
   ])
   let inv: { reference: string; paymentUrl: string }
   try {
     inv = await createInvoice(cfg, {
-      merchantOrderId, amount: q.amount_minor, email,
-      productDetails: `AVORLUNE ${p.public_reference} — ${p.title}`,
+      merchantOrderId, amount: ms.amount_minor, email,
+      productDetails: `AVORLUNE ${p.public_reference} — ${ms.kind === 'deposit' ? 'DP 50%' : ms.kind === 'balance' ? 'Pelunasan 50%' : 'Pembayaran'} — ${p.title}`,
       itemName: `AVORLUNE ${p.public_reference}`,
       customerVaName: p.customer_name.replace(/[^A-Za-z0-9 .'-]/g, '').slice(0, 20) || 'AVORLUNE Client',
       phoneNumber: p.contact_method === 'whatsapp' ? p.customer_contact.replace(/[^\d+]/g, '').slice(0, 20) : undefined,
@@ -71,7 +73,7 @@ export async function startCheckout(env: Env, db: D1Database, p: ProjectRow, ori
     providerError(e)
   }
   await db.prepare(`UPDATE payment_orders SET status = 'pending', provider_reference = ?1, payment_url = ?2, updated_at = ?3 WHERE id = ?4 AND status = 'created'`).bind(inv.reference, inv.paymentUrl, nowIso(), id).run()
-  await enqueueNotification(db, p, 'payment_pending', id, q.amount_minor)
+  await enqueueNotification(db, p, 'payment_pending', id, ms.amount_minor)
   const order = (await db.prepare('SELECT * FROM payment_orders WHERE id = ?1').bind(id).first<PaymentOrderRow>())!
   return { order, reference: inv.reference, cfg, reused: false }
 }
@@ -84,12 +86,15 @@ export async function settlePaid(db: D1Database, order: PaymentOrderRow, info: {
   if (order.status === 'paid') return 'already_paid' as const
   const stamp = nowIso()
   const ref = info.reference ?? order.provider_reference ?? order.merchant_order_id
+  const payId = newId()
   const res = await db.batch([
     db.prepare(`UPDATE payment_orders SET status = 'paid', paid_at = ?1, provider_reference = ?2, payment_code = COALESCE(?3, payment_code), publisher_order_id = COALESCE(?4, publisher_order_id), updated_at = ?1
                 WHERE id = ?5 AND status != 'paid'`).bind(stamp, ref, info.paymentCode ?? null, info.publisherOrderId ?? null, order.id),
-    db.prepare(`INSERT INTO payments (id, project_id, amount_minor, currency, method, provider_reference, status, confirmed_by, confirmed_at, created_at, updated_at)
-                SELECT ?1, ?2, ?3, 'IDR', ?4, ?5, 'paid', NULL, ?6, ?6, ?6
-                WHERE EXISTS (SELECT 1 FROM payment_orders WHERE id = ?7 AND status = 'paid' AND paid_at = ?6)`).bind(newId(), order.project_id, order.amount_minor, `duitku:${(info.paymentCode ?? 'POP').slice(0, 8)}`, ref, stamp, order.id),
+    db.prepare(`INSERT INTO payments (id, project_id, amount_minor, currency, method, provider_reference, status, confirmed_by, confirmed_at, created_at, updated_at, milestone_id)
+                SELECT ?1, ?2, ?3, 'IDR', ?4, ?5, 'paid', NULL, ?6, ?6, ?6, ?8
+                WHERE EXISTS (SELECT 1 FROM payment_orders WHERE id = ?7 AND status = 'paid' AND paid_at = ?6)`).bind(payId, order.project_id, order.amount_minor, `duitku:${(info.paymentCode ?? 'POP').slice(0, 8)}`, ref, stamp, order.id, order.milestone_id ?? null),
+    db.prepare(`UPDATE payment_milestones SET status = 'paid', paid_at = ?1, payment_id = ?2, updated_at = ?1
+                WHERE id = ?3 AND status = 'unpaid' AND EXISTS (SELECT 1 FROM payments WHERE id = ?2)`).bind(stamp, payId, order.milestone_id ?? ''),
     db.prepare(`INSERT INTO project_events (id, project_id, actor_user_id, actor_type, event_type, from_status, to_status, safe_metadata_json, created_at)
                 SELECT ?1, ?2, NULL, 'system', 'payment_gateway_confirmed', NULL, NULL, ?3, ?4
                 WHERE EXISTS (SELECT 1 FROM payment_orders WHERE id = ?5 AND status = 'paid' AND paid_at = ?4)`)
@@ -100,9 +105,10 @@ export async function settlePaid(db: D1Database, order: PaymentOrderRow, info: {
     if (proj) await enqueueNotification(db, proj, 'payment_success', order.id, order.amount_minor)
   }
   if ((res[0].meta.changes ?? 0) !== 1) return 'already_paid' as const
-  // Move the project into the production queue if it was waiting for payment.
+  // Only the first milestone (deposit) moves the project into the production queue — exactly once. Balance never re-queues.
+  const ms = order.milestone_id ? await db.prepare('SELECT sequence FROM payment_milestones WHERE id = ?1').bind(order.milestone_id).first<{ sequence: number }>() : null
   const p = await getProjectById(db, order.project_id)
-  if (p && (PAYABLE_STATUSES as readonly string[]).includes(p.status)) {
+  if (p && (!ms || ms.sequence === 1) && (PAYABLE_STATUSES as readonly string[]).includes(p.status)) {
     try {
       await transition(db, p, 'queued', { type: 'system' }, { reason: 'Pembayaran terverifikasi Duitku', orderId: order.id })
     } catch (e) {

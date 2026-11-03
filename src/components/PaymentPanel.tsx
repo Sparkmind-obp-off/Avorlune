@@ -7,7 +7,20 @@ export interface PaymentOrderInfo {
   id: string; merchantOrderId: string; amountMinor: number; status: string; paymentCode: string | null
   expiresAt: string | null; paidAt: string | null; createdAt: string; environment: string
 }
-export interface PaymentInfo { onlineEnabled: boolean; canPay: boolean; needsEmail: boolean; orders: PaymentOrderInfo[] }
+export interface ScheduleInfo {
+  totalMinor: number; paidMinor: number; remainingMinor: number; status: string
+  milestones: { id: string; kind: 'deposit' | 'balance' | 'full'; sequence: number; amountMinor: number; status: string; paidAt: string | null }[]
+}
+export interface PaymentInfo {
+  onlineEnabled: boolean; canPay: boolean; needsEmail: boolean; orders: PaymentOrderInfo[]
+  schedule?: ScheduleInfo | null; nextMilestone?: { kind: string; amountMinor: number } | null
+}
+export const MILESTONE_LABEL: Record<string, string> = { deposit: 'DP 50%', balance: 'Pelunasan 50%', full: 'Pembayaran' }
+const MILESTONE_HINT: Record<string, string> = {
+  deposit: 'Dibayar setelah penawaran disetujui. Produksi dimulai setelah DP terverifikasi.',
+  balance: 'Dibayar setelah preview dan revisi yang termasuk selesai. File final tanpa watermark dirilis setelah pelunasan terverifikasi.',
+  full: 'Pembayaran penuh sesuai penawaran.',
+}
 
 interface CheckoutResult { order: PaymentOrderInfo; reference: string; popScript: string; paymentUrl: string | null; reused: boolean }
 
@@ -83,12 +96,31 @@ export function PaymentPanel({ reference, token, payment, onChanged }: { referen
     } finally { setBusy(false) }
   }
 
-  if (!payment.onlineEnabled && payment.orders.length === 0) return null
+  if (!payment.schedule && !payment.onlineEnabled && payment.orders.length === 0) return null
   const emailOk = !payment.needsEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   return (
     <article className="panel" id="payment-panel">
       <h2 className="h4">Pembayaran</h2>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {payment.schedule && (
+        <div id="payment-schedule">
+          <dl className="kv small">
+            <dt>Total penawaran</dt><dd>{formatIDR(payment.schedule.totalMinor)}</dd>
+            <dt>Sudah dibayar</dt><dd>{formatIDR(payment.schedule.paidMinor)}</dd>
+            <dt>Sisa</dt><dd>{formatIDR(payment.schedule.remainingMinor)}</dd>
+          </dl>
+          <ol className="milestones">
+            {payment.schedule.milestones.map((m) => (
+              <li key={m.id} className={m.status === 'paid' ? 'is-paid' : ''}>
+                <strong>{MILESTONE_LABEL[m.kind] ?? m.kind}</strong> · {formatIDR(m.amountMinor)} ·{' '}
+                <span className={`tag t-${m.status === 'paid' ? 'accepted' : m.status}`}>{m.status === 'paid' ? `Lunas ${formatDate(m.paidAt)}` : 'Belum dibayar'}</span>
+                <div className="small muted">{MILESTONE_HINT[m.kind]}</div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {payment.canPay && payment.nextMilestone && <p className="small"><strong>Tagihan saat ini: {MILESTONE_LABEL[payment.nextMilestone.kind]} — {formatIDR(payment.nextMilestone.amountMinor)}</strong></p>}
       {payment.canPay && (
         <>
           <p className="muted">Pembayaran diproses oleh Duitku. Status lunas hanya ditetapkan setelah verifikasi server ke Duitku.</p>
@@ -103,7 +135,7 @@ export function PaymentPanel({ reference, token, payment, onChanged }: { referen
           </div>
         </>
       )}
-      {!payment.onlineEnabled && <p className="small muted">Pembayaran online sedang tidak aktif. Tim kami akan mengirim instruksi pembayaran.</p>}
+      {!payment.onlineEnabled && payment.schedule && payment.schedule.remainingMinor > 0 && <p className="small muted">Pembayaran online sedang tidak aktif. Tim kami akan mengirim instruksi transfer untuk termin yang jatuh tempo; status diperbarui setelah dana diverifikasi.</p>}
       {payment.orders.length > 0 && (
         <ul className="asset-list" aria-label="Riwayat pembayaran">
           {payment.orders.map((o) => (

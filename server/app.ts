@@ -8,6 +8,8 @@ import { publicRoutes } from './routes/public'
 import { customerRoutes } from './routes/customer'
 import { adminRoutes } from './routes/admin'
 import { paymentRoutes } from './routes/payments'
+import { accountRoutes } from './routes/account'
+import { catalogRoutes } from './routes/catalog'
 
 export function createApp() {
   const app = new Hono<AppBindings>().basePath('/api/v1')
@@ -24,6 +26,8 @@ export function createApp() {
   app.route('/', publicRoutes)
   app.route('/', customerRoutes)
   app.route('/', paymentRoutes)
+  app.route('/', catalogRoutes)
+  app.route('/account', accountRoutes)
   app.route('/admin', adminRoutes)
 
   app.notFound((c) => c.json({ error: { code: 'NOT_FOUND', message: 'Endpoint tidak ditemukan' }, requestId: c.get('requestId') }, 404))

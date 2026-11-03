@@ -50,9 +50,24 @@ describe('Duitku configuration (static guard)', () => {
   it('preview has no Duitku configuration at all', () => {
     expect(Object.keys(cfg.env.preview.vars).filter((k) => k.startsWith('DUITKU'))).toEqual([])
   })
-  it('CSP only allows official Duitku POP hosts for scripts', () => {
+  it('CSP script-src is an exact allowlist: self, official Duitku POP hosts, Clerk dev FAPI + Clerk/Cloudflare bot protection', () => {
     const headers = readFileSync('public/_headers', 'utf8')
     const script = headers.match(/script-src ([^;]+);/)?.[1] ?? ''
-    expect(script.split(/\s+/).sort()).toEqual(["'self'", 'https://app-prod.duitku.com', 'https://app-sandbox.duitku.com'].sort())
+    expect(script.split(/\s+/).sort()).toEqual([
+      "'self'", 'https://app-prod.duitku.com', 'https://app-sandbox.duitku.com',
+      'https://exotic-koi-7642.clerk.accounts.dev', 'https://challenges.cloudflare.com', 'https://*.protect.clerk.com',
+    ].sort())
+    expect(script).not.toMatch(/unsafe-inline|unsafe-eval|\*\s|https:\s|http:/)
+  })
+})
+
+describe('Clerk configuration (static guard)', () => {
+  const raw = readFileSync('wrangler.jsonc', 'utf8')
+  const cfg = readJsonc('wrangler.jsonc')
+  it('no Clerk secret key is committed anywhere in config', () => {
+    expect(raw).not.toMatch(/sk_(test|live)_/)
+  })
+  it('production never carries a development (pk_test_) publishable key', () => {
+    expect(String(cfg.env.production.vars.CLERK_PUBLISHABLE_KEY ?? '')).not.toMatch(/^pk_test_/)
   })
 })

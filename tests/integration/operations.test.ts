@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { loginAdmin, setup, toCustomerReview, validInquiry, ADMIN_PASSWORD } from '../helpers/app'
+import { loginAdmin, payBalance, setup, toCustomerReview, validInquiry, ADMIN_PASSWORD } from '../helpers/app'
 import { PNG } from '../helpers/store'
 
 type Ctx = Awaited<ReturnType<typeof setup>>
@@ -106,6 +106,7 @@ describe('asset licensing registry + delivery gate', () => {
     const ok = await ctx.call('POST', `/admin/projects/${p.id}/licenses`, { json: { assetId: p.assetId, sourceType: 'ai_generated', providerSlug: 'genspark', commercialUse: 'allowed', licenseEvidence: 'Plus aktif, invoice INV-1' }, headers: auth })
     expect((await ctx.call('PATCH', `/admin/projects/${p.id}/status`, { json: { toStatus: 'delivered' }, headers: auth })).body.error.code).toBe('LICENSE_CLEARANCE_REQUIRED')
     expect((await ctx.call('POST', `/admin/projects/${p.id}/licenses/${ok.body.data.id}/qa`, { json: { deliveryPermitted: true }, headers: auth })).status).toBe(200)
+    await payBalance(ctx, auth, p.id)
     expect((await ctx.call('PATCH', `/admin/projects/${p.id}/status`, { json: { toStatus: 'delivered' }, headers: auth })).status).toBe(200)
     expect((ctx.raw.prepare(`SELECT COUNT(*) n FROM notifications WHERE project_id = ? AND event = 'final_delivered'`).get(p.id) as { n: number }).n).toBe(1)
   })

@@ -13,15 +13,30 @@ import { publicOrder, reconcileOrder, startCheckout, type PaymentOrderRow } from
 import { eventStmt } from '../domain/events'
 import { notificationStmt } from '../domain/notifications'
 import { supportSchema } from '../domain/operations'
+import { authenticateCustomer, hasBearer } from '../middleware/customer'
+import { authorizeRun, authorizeRunSchema, customerRuns } from '../domain/actions'
+import { balanceSatisfied, milestoneStmts, nextPayableMilestone, scheduleView } from '../domain/schedule'
 
 export const customerRoutes = new Hono<AppBindings>()
 
 const notFound = () => new ApiError(404, 'NOT_FOUND', 'Proyek tidak ditemukan atau tautan akses tidak berlaku')
 
-/** Customer access = reference + valid, unexpired, unrevoked HMAC token bound to that project. Failures are indistinguishable. */
+/**
+ * Customer access to one project, two independent paths (failures are indistinguishable):
+ *  1. Verified Clerk session (Authorization: Bearer) AND the project is owned by that internal customer id.
+ *  2. Legacy: reference + valid, unexpired, unrevoked HMAC project token (x-project-token).
+ * Legacy projects are never auto-claimed by email.
+ */
 async function authorizeCustomer(c: Context<AppBindings>): Promise<ProjectRow> {
   await enforceRateLimit(c.env.DB, 'customer', clientIp(c), 60, 60)
   const ref = c.req.param('reference') ?? ''
+  if (hasBearer(c) && !c.req.header('x-project-token')) {
+    const cu = await authenticateCustomer(c)
+    if (!REFERENCE_PATTERN.test(ref)) throw notFound()
+    const p = await getProjectByReference(c.env.DB, ref)
+    if (!p || !p.customer_id || p.customer_id !== cu.id) throw notFound()
+    return p
+  }
   const token = c.req.header('x-project-token') ?? ''
   const secret = c.env.LINK_SIGNING_SECRET
   if (!secret) throw new ApiError(503, 'NOT_CONFIGURED', 'Akses proyek belum dikonfigurasi')
@@ -70,6 +85,7 @@ customerRoutes.get('/projects/:reference', async (c) => {
     feedback: fb.results ?? [],
     deliveryEnabled: deliveryEnabled(c.env),
     payment: await customerPayment(c.env, db, p),
+    actionRuns: await customerRuns(db, p.id),
     support: ((await db.prepare(`SELECT id, category, status, created_at, resolved_at, resolution_note FROM support_tickets WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 20`).bind(p.id).all()).results ?? []),
     refunds: ((await db.prepare(`SELECT id, amount_minor, status, created_at, resolved_at FROM refunds WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 20`).bind(p.id).all()).results ?? []),
     assets: await customerAssets(deliveryEnabled(c.env) ? db : null, p),
@@ -84,15 +100,15 @@ customerRoutes.get('/projects/:reference', async (c) => {
 })
 
 async function customerPayment(env: AppBindings['Bindings'], db: D1Database, p: ProjectRow) {
-  const orders = await db.prepare('SELECT * FROM payment_orders WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 5').bind(p.id).all<PaymentOrderRow>()
-  const accepted = await db.prepare(`SELECT COUNT(*) n FROM quotes WHERE project_id = ?1 AND status = 'accepted'`).bind(p.id).first<{ n: number }>()
-  const list = orders.results ?? []
-  const paid = list.some((o) => o.status === 'paid')
+  const orders = await db.prepare('SELECT * FROM payment_orders WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 10').bind(p.id).all<PaymentOrderRow>()
+  const next = await nextPayableMilestone(db, p.id, p.status)
   return {
     onlineEnabled: checkoutEnabled(env),
-    canPay: checkoutEnabled(env) && !paid && (accepted?.n ?? 0) > 0 && ['quoted', 'awaiting_payment'].includes(p.status),
+    canPay: checkoutEnabled(env) && !!next,
+    nextMilestone: next ? { kind: next.kind, amountMinor: next.amount_minor } : null,
     needsEmail: p.contact_method !== 'email',
-    orders: list.map(publicOrder),
+    schedule: await scheduleView(db, p.id),
+    orders: (orders.results ?? []).map(publicOrder),
   }
 }
 
@@ -102,7 +118,9 @@ async function customerAssets(db: D1Database | null, p: ProjectRow) {
     .prepare(`SELECT * FROM assets WHERE project_id = ?1 AND status = 'active' AND asset_kind IN ('preview','final') ORDER BY created_at DESC LIMIT 100`)
     .bind(p.id)
     .all<AssetRow>()
-  return (rows.results ?? []).map(publicAsset)
+  const balancePaid = await balanceSatisfied(db, p.id)
+  // Final files stay locked (listed for approval, not downloadable) until the 50% balance is verified.
+  return (rows.results ?? []).map((a) => ({ ...publicAsset(a), locked: a.asset_kind === 'final' && !balancePaid }))
 }
 
 /** Authorized download (token in header, never in URL). Object keys are never exposed. */
@@ -111,6 +129,7 @@ customerRoutes.get('/projects/:reference/assets/:assetId/download', async (c) =>
   if (!(CUSTOMER_VISIBLE_STATUSES as readonly string[]).includes(p.status)) throw notFound()
   const a = await getProjectAsset(c.env.DB, p.id, c.req.param('assetId'))
   if (!a || a.status !== 'active' || !['preview', 'final'].includes(a.asset_kind)) throw new ApiError(404, 'NOT_FOUND', 'File tidak tersedia')
+  if (a.asset_kind === 'final' && !(await balanceSatisfied(c.env.DB, p.id))) throw new ApiError(403, 'BALANCE_REQUIRED', 'File final dapat diunduh setelah pelunasan 50% terverifikasi')
   const res = await streamAsset(c.env, a)
   await eventStmt(c.env.DB, { projectId: p.id, actorType: 'customer', eventType: 'asset_downloaded', metadata: { assetId: a.id, kind: a.asset_kind } }).run()
   return res
@@ -126,7 +145,7 @@ customerRoutes.post('/projects/:reference/quote/decision', async (c) => {
   const res = await db.batch([
     db.prepare(`UPDATE quotes SET status = ?1, accepted_at = ?2, updated_at = ?3 WHERE id = ?4 AND status = 'sent'`).bind(decision, decision === 'accepted' ? now : null, now, q.id),
     eventStmt(db, { projectId: p.id, actorType: 'customer', eventType: `quote_${decision}`, metadata: { quoteId: q.id } }),
-    ...(decision === 'accepted' ? [notificationStmt(db, p, 'quote_accepted', q.id, q.amount_minor)] : []),
+    ...(decision === 'accepted' ? [notificationStmt(db, p, 'quote_accepted', q.id, q.amount_minor), ...milestoneStmts(db, p.id, q.id, q.amount_minor, now)] : []),
   ])
   if ((res[0].meta.changes ?? 0) !== 1) throw new ApiError(409, 'STALE_STATE', 'Penawaran sudah diputuskan')
   return ok(c, { quoteId: q.id, status: decision })
@@ -212,4 +231,12 @@ customerRoutes.post('/projects/:reference/support', async (c) => {
     eventStmt(c.env.DB, { projectId: p.id, actorType: 'customer', eventType: 'support_opened', metadata: { ticketId: id, category: input.category } }),
   ])
   return ok(c, { id, status: 'open' }, 201)
+})
+
+/** Customer authorizes a prepared action run (scope snapshot recorded). Staff can never self-authorize. */
+customerRoutes.post('/projects/:reference/actions/:runId/authorize', async (c) => {
+  const p = await authorizeCustomer(c)
+  await parseJson(c, authorizeRunSchema)
+  await authorizeRun(c.env.DB, p, c.req.param('runId'), c.get('customer')?.id ?? null)
+  return ok(c, { id: c.req.param('runId'), status: 'queued' })
 })

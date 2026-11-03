@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useCustomerAuth } from '../lib/auth'
 import { PageHeader } from '../components/SiteLayout'
 import { Alert, Field, describedBy } from '../components/Field'
 import { api, ApiFailure } from '../lib/api'
@@ -12,6 +13,15 @@ type FormState = {
   title: string; objective: string; description: string; intendedUse: string; desiredFormat: string
   deadlinePreference: (typeof DEADLINE_PREFERENCES)[number]; deadlineDate: string; brandUrl: string; referenceLinks: string
   budgetRange: (typeof BUDGET_RANGES)[number]; consent: boolean; rightsConfirmed: boolean; website: string
+}
+
+const DRAFT_KEY = 'avl_brief_draft'
+const DRAFT_FIELDS = ['name', 'contactMethod', 'contactValue', 'serviceType', 'title', 'objective', 'description', 'intendedUse', 'desiredFormat', 'deadlinePreference', 'deadlineDate', 'brandUrl', 'referenceLinks', 'budgetRange'] as const
+function draftData(f: FormState) {
+  return Object.fromEntries(DRAFT_FIELDS.map((k) => [k, f[k]]))
+}
+function pickDraft(d: Record<string, unknown>): Partial<FormState> {
+  return Object.fromEntries(DRAFT_FIELDS.filter((k) => typeof d[k] === 'string').map((k) => [k, String(d[k]).slice(0, 4000)])) as Partial<FormState>
 }
 
 export function StartProjectPage() {
@@ -32,6 +42,40 @@ export function StartProjectPage() {
     budgetRange: 'undisclosed', consent: false, rightsConfirmed: false, website: '',
   })
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }))
+  const auth = useCustomerAuth()
+  const navigate = useNavigate()
+  const offerSlug = /^[a-z0-9-]{2,60}$/.test(params.get('offer') ?? '') ? params.get('offer')! : ''
+  const [offerName, setOfferName] = useState<string | null>(null)
+  const [draftNote, setDraftNote] = useState<string | null>(null)
+  const restored = useRef(false)
+
+  useEffect(() => {
+    if (!offerSlug) return
+    api<{ name: string; available: boolean }>(`/catalog/${offerSlug}`).then((o) => setOfferName(o.available ? o.name : null)).catch(() => setOfferName(null))
+  }, [offerSlug])
+
+  // Guest draft preservation: kept in this tab (sessionStorage) across sign-in; bound to the account only server-side.
+  useEffect(() => {
+    if (restored.current || !auth.loaded) return
+    restored.current = true
+    const local = sessionStorage.getItem(DRAFT_KEY)
+    if (local) {
+      try { setF((s) => ({ ...s, ...pickDraft(JSON.parse(local)) })); setDraftNote('Isian sebelumnya dipulihkan.') } catch { /* ignore */ }
+    } else if (auth.signedIn) {
+      api<{ data: Record<string, unknown> } | null>('/account/me/draft').then((d) => {
+        if (d?.data) { setF((s) => ({ ...s, ...pickDraft(d.data) })); setDraftNote('Draf dari akun Anda dipulihkan.') }
+      }).catch(() => undefined)
+    }
+  }, [auth.loaded, auth.signedIn])
+
+  useEffect(() => {
+    if (!restored.current) return
+    const data = draftData(f)
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(data))
+    if (!auth.signedIn) return
+    const t = setTimeout(() => { void api('/account/me/draft', { method: 'PUT', json: { data } }).catch(() => undefined) }, 1500)
+    return () => clearTimeout(t)
+  }, [f, auth.signedIn])
   const minDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
 
   async function onSubmit(e: FormEvent) {
@@ -42,6 +86,7 @@ export function StartProjectPage() {
       referenceLinks: f.referenceLinks.split(/\s+/).map((s) => s.trim()).filter(Boolean),
       deadlineDate: f.deadlinePreference === 'specific_date' ? f.deadlineDate : '',
       formStartedAt: startedAt.current,
+      offerSlug: offerSlug || undefined,
     }
     const parsed = inquirySchema.safeParse(payload)
     if (!parsed.success) {
@@ -56,9 +101,15 @@ export function StartProjectPage() {
       return
     }
     setErrors({})
+    if (auth.briefRequiresAccount && !auth.signedIn) {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draftData(f)))
+      navigate(`/sign-in?redirect=${encodeURIComponent(`/start${offerSlug ? `?offer=${offerSlug}` : ''}`)}`)
+      return
+    }
     setSubmitting(true)
     try {
       const res = await api<{ reference: string }>('/inquiries', { method: 'POST', json: payload, headers: { 'idempotency-key': idemKey.current } })
+      sessionStorage.removeItem(DRAFT_KEY)
       setReference(res.reference)
       window.scrollTo(0, 0)
     } catch (err) {
@@ -79,8 +130,8 @@ export function StartProjectPage() {
               <p className="small muted">Nomor referensi proyek Anda</p>
               <p className="reference">{reference}</p>
               <p>Simpan nomor ini. Brief Anda sudah kami terima dan akan ditinjau oleh tim. Kami akan menghubungi Anda melalui kanal kontak yang Anda pilih.</p>
-              <p className="small muted">Mengirim brief belum berarti proyek diterima. Lingkup, waktu dan harga dikirim terpisah setelah peninjauan. Saat ini belum ada notifikasi otomatis.</p>
-              <Link to="/" className="btn btn-ghost">Kembali ke beranda</Link>
+              <p className="small muted">Mengirim brief belum berarti proyek diterima dan tidak membuat tagihan. Lingkup, waktu dan harga dikirim terpisah setelah peninjauan. Saat ini belum ada notifikasi otomatis.</p>
+              {auth.signedIn ? <Link to="/account" className="btn btn-primary">Lihat di akun saya</Link> : <Link to="/" className="btn btn-ghost">Kembali ke beranda</Link>}
             </div>
           </div>
         </section>
@@ -96,6 +147,11 @@ export function StartProjectPage() {
         <div className="container narrow">
           <form className="inquiry-form" id="inquiry-form" onSubmit={onSubmit} noValidate>
             {serverError && <Alert kind="error">{serverError}</Alert>}
+            {draftNote && <Alert kind="info">{draftNote}</Alert>}
+            {offerName && <p className="note-box small">Brief untuk: <strong>{offerName}</strong> · <Link to={`/catalog/${offerSlug}`}>detail</Link></p>}
+            {auth.enabled && !auth.signedIn && (
+              <p className="small muted">{auth.briefRequiresAccount ? 'Anda perlu masuk atau membuat akun saat mengirim — isian tetap tersimpan.' : 'Punya akun? '}<Link to={`/sign-in?redirect=${encodeURIComponent('/start')}`}>Masuk</Link></p>
+            )}
 
             <fieldset>
               <legend className="h4">1. Kontak</legend>
@@ -200,7 +256,7 @@ export function StartProjectPage() {
             </fieldset>
 
             <button type="submit" className="btn btn-primary btn-block" disabled={submitting} aria-busy={submitting}>
-              {submitting ? 'Mengirim…' : 'Kirim brief'}
+              {submitting ? 'Mengirim…' : auth.briefRequiresAccount && !auth.signedIn ? 'Masuk & kirim brief' : 'Kirim brief'}
             </button>
           </form>
         </div>

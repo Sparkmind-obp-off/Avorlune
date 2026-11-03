@@ -7,6 +7,7 @@ import { enforceRateLimit, pruneOperationalData } from '../lib/rateLimit'
 import { randomBytes, sha256Hex } from '../lib/crypto'
 import { eventStmt } from '../domain/events'
 import { notificationStmt } from '../domain/notifications'
+import { authenticateCustomer, hasBearer } from '../middleware/customer'
 
 export const publicRoutes = new Hono<AppBindings>()
 
@@ -39,6 +40,17 @@ publicRoutes.post('/inquiries', async (c) => {
     if (prior) return ok(c, { reference: prior.public_reference, duplicate: true })
   }
 
+  // Customer account (Clerk). When signed in, the brief is bound to the verified internal customer id.
+  const customer = hasBearer(c) ? await authenticateCustomer(c) : null
+  if (!customer && c.env.CUSTOMER_AUTH_REQUIRED_FOR_BRIEF === 'true') throw new ApiError(401, 'ACCOUNT_REQUIRED', 'Masuk atau buat akun untuk mengirim brief. Isian Anda tetap tersimpan.')
+  let offerVersionId: string | null = null
+  if (input.offerSlug) {
+    const ov = await db.prepare(`SELECT o.current_version_id AS v FROM catalog_items i JOIN offers o ON o.catalog_item_id = i.id JOIN offer_versions ov ON ov.id = o.current_version_id
+                                 WHERE i.slug = ?1 AND i.status = 'published' AND o.status = 'active' AND ov.price_mode != 'internal_only'`).bind(input.offerSlug).first<{ v: string }>()
+    if (!ov) throw new ApiError(422, 'OFFER_UNAVAILABLE', 'Layanan yang dipilih sedang tidak tersedia')
+    offerVersionId = ov.v
+  }
+
   const id = newId()
   const now = nowIso()
   const brief = {
@@ -65,6 +77,10 @@ publicRoutes.post('/inquiries', async (c) => {
         eventStmt(db, { projectId: id, actorType: 'customer', eventType: 'inquiry_created', toStatus: 'inquiry', metadata: { serviceType: input.serviceType } }),
         notificationStmt(db, { id, public_reference: reference, title: input.title, customer_name: input.name, contact_method: input.contactMethod }, 'project_submitted', 'created'),
       ]
+      if (customer || offerVersionId) {
+        stmts.push(db.prepare('UPDATE projects SET customer_id = ?1, offer_version_id = ?2 WHERE id = ?3').bind(customer?.id ?? null, offerVersionId, id))
+      }
+      if (customer) stmts.push(db.prepare(`DELETE FROM customer_drafts WHERE customer_id = ?1 AND kind = 'brief'`).bind(customer.id))
       if (idemHash) {
         stmts.push(db.prepare("INSERT INTO idempotency_keys (key_hash, scope, project_id, created_at) VALUES (?1, 'inquiry', ?2, ?3)").bind(idemHash, id, now))
       }

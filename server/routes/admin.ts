@@ -11,9 +11,11 @@ import { deliveryEnabled } from '../domain/assets'
 import { logEvent } from '../lib/log'
 import { checkoutEnabled, getDuitkuConfig, probeCredentials } from '../lib/duitku'
 import { publicOrder, reconcileOrder, type PaymentOrderRow } from '../domain/payments'
-import { assertTransitionAllowed, requireProject, transition } from '../domain/projects'
+import { assertBalancePaid, assertTransitionAllowed, requireProject, transition } from '../domain/projects'
+import { milestoneForManualPayment, scheduleView } from '../domain/schedule'
 import { eventStmt } from '../domain/events'
 import { adminOps } from './adminOps'
+import { adminPlatform } from './adminPlatform'
 import { STATUS_NOTIFICATIONS, notificationStmt } from '../domain/notifications'
 import { assertDeliveryCleared } from '../domain/operations'
 
@@ -131,6 +133,7 @@ admin.get('/projects/:id', async (c) => {
   const refunds = costRows.filter((x) => x.kind === 'refund').reduce((a, b) => a + b.amount_minor, 0)
   const laborCost = costRows.filter((x) => x.kind === 'labor').reduce((a, b) => a + b.amount_minor, 0)
   return ok(c, {
+    schedule: await scheduleView(db, p.id),
     refunds: refundRows.results ?? [],
     licenses: licenses.results ?? [],
     notifications: notifications.results ?? [],
@@ -162,6 +165,7 @@ admin.patch('/projects/:id/status', async (c) => {
   await assertTransitionAllowed(db, p, toStatus as ProjectStatus, reason, c.env, assetId)
   // Rights clearance: the approved final asset needs a QA-approved licence record before delivery (docs/54 §4).
   if (toStatus === 'delivered' && p.approved_asset_id) await assertDeliveryCleared(db, p.id, p.approved_asset_id)
+  if (toStatus === 'delivered') await assertBalancePaid(db, p.id)
   const meta: Record<string, unknown> = reason ? { reason } : {}
   if (toStatus === 'approved') meta.assetId = assetId
   const notify = STATUS_NOTIFICATIONS[toStatus]
@@ -207,19 +211,24 @@ admin.post('/projects/:id/payments/confirm', requireRecentAuth, async (c) => {
     throw new ApiError(409, 'INVALID_STATE', 'Pembayaran belum dapat dicatat pada tahap ini')
   }
   const input = await parseJson(c, paymentConfirmSchema)
+  const ms = await milestoneForManualPayment(db, p.id, input.amountMinor)
+  if (!ms) throw new ApiError(409, 'QUOTE_NOT_ACCEPTED', 'Penawaran belum disetujui klien; termin pembayaran belum ada')
   const id = newId()
   const now = nowIso()
-  await db.batch([
+  const res = await db.batch([
     db
       .prepare(
-        `INSERT INTO payments (id, project_id, amount_minor, currency, method, provider_reference, status, confirmed_by, confirmed_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, 'IDR', ?4, ?5, 'manually_confirmed', ?6, ?7, ?7, ?7)`,
+        `INSERT INTO payments (id, project_id, amount_minor, currency, method, provider_reference, status, confirmed_by, confirmed_at, created_at, updated_at, milestone_id)
+         SELECT ?1, ?2, ?3, 'IDR', ?4, ?5, 'manually_confirmed', ?6, ?7, ?7, ?7, ?8
+         WHERE EXISTS (SELECT 1 FROM payment_milestones WHERE id = ?8 AND status = 'unpaid')`,
       )
-      .bind(id, p.id, input.amountMinor, input.method, input.providerReference ?? null, user.id, now),
-    eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'payment_manually_confirmed', metadata: { paymentId: id, amountMinor: input.amountMinor, method: input.method, note: input.note ?? null } }),
+      .bind(id, p.id, input.amountMinor, input.method, input.providerReference ?? null, user.id, now, ms.id),
+    db.prepare(`UPDATE payment_milestones SET status = 'paid', paid_at = ?1, payment_id = ?2, updated_at = ?1 WHERE id = ?3 AND status = 'unpaid' AND EXISTS (SELECT 1 FROM payments WHERE id = ?2)`).bind(now, id, ms.id),
+    eventStmt(db, { projectId: p.id, actorUserId: user.id, actorType: 'admin', eventType: 'payment_manually_confirmed', metadata: { paymentId: id, amountMinor: input.amountMinor, method: input.method, milestone: ms.kind, note: input.note ?? null } }),
     notificationStmt(db, p, 'payment_success', id, input.amountMinor),
   ])
-  return ok(c, { id, status: 'manually_confirmed' }, 201)
+  if ((res[1].meta.changes ?? 0) !== 1) throw new ApiError(409, 'STALE_STATE', 'Termin ini sudah tercatat lunas')
+  return ok(c, { id, status: 'manually_confirmed', milestone: ms.kind }, 201)
 })
 
 admin.post('/projects/:id/events', async (c) => {
@@ -371,4 +380,5 @@ admin.post('/projects/:id/payment-orders/:orderId/reconcile', requireRecentAuth,
 })
 
 admin.route('/', adminOps)
+admin.route('/', adminPlatform)
 adminRoutes.route('/', admin)

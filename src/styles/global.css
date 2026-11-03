@@ -259,3 +259,25 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); outline
 .ops-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .75rem; }
 .ops-list li { border: 1px solid var(--line); border-radius: 10px; padding: .75rem 1rem; }
 .prewrap { white-space: pre-wrap; }
+
+/* Customer accounts, catalog, demo (docs/78) */
+.account-nav { display: inline-flex; align-items: center; gap: .6rem; }
+.auth-box { display: grid; justify-items: center; gap: 1rem; }
+.catalog-toolbar { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.catalog-toolbar input[type=search] { min-width: 220px; }
+.catalog-card .eyebrow { margin-bottom: .25rem; }
+.demo-timeline li { opacity: .55; }
+.demo-timeline li.is-done { opacity: 1; }
+.pad { padding: 2rem; }
+
+/* 50/50 schedule, CRM, catalog admin (docs/78) */
+.milestones { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: .5rem; }
+.milestones li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem; }
+.milestones li.is-paid { border-color: var(--success); }
+.search-row { display: flex; gap: .5rem; margin: 1rem 0; }
+.search-row input { flex: 1; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.admin-table th, .admin-table td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.admin-table th { color: var(--muted); font-weight: 500; }
+.version-form { margin-top: .75rem; border-top: 1px dashed var(--line); padding-top: .75rem; }
+@media (max-width: 720px) { .admin-table { display: block; overflow-x: auto; } }

@@ -23,12 +23,20 @@
       // R2 private delivery (ADR-008) — add ONLY after owner approval, production env only:
       // "r2_buckets": [{ "binding": "DELIVERY_BUCKET", "bucket_name": "avorlune-assets" }]
     },
-    // A1 — preview deployments are deliberately given NO database binding (and no R2).
+    // A1 — preview uses its OWN D1 (avorlune-preview, stamped app_meta.environment='preview') and no R2.
     // Bindings are non-inheritable in Pages env blocks, so production data is unreachable.
     // The app's env guard (app_meta.environment) is a second, independent barrier.
-    // When a dedicated preview D1 exists, bind it here and stamp it with environment='preview'.
+    // Clerk: DEVELOPMENT instance only (pk_test is browser-safe). CLERK_SECRET_KEY is never stored here.
+    // Production gets NO Clerk vars until a Clerk production instance is approved (docs/79).
     "preview": {
-      "vars": { "APP_ENV": "preview" }
+      "vars": {
+        "APP_ENV": "preview",
+        "CLERK_PUBLISHABLE_KEY": "pk_test_ZXhvdGljLWtvaS03NjQyLmNsZXJrLmFjY291bnRzLmRldiQ",
+        "CLERK_AUTHORIZED_PARTIES": "https://preview.avorlune.pages.dev"
+      },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "avorlune-preview", "database_id": "4cdfb666-052d-406b-9cff-23e2546f194d" }
+      ]
     }
   }
 }
