@@ -20,27 +20,31 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 
 ## Target frontend and authentication architecture
 
-The approved target is **exactly two frontend applications**, in one repository:
-1. **Customer frontend** — Clerk authentication for customers only.
-2. **Admin frontend** — separate Cloudflare Pages deployment with first-party AVORLUNE admin authentication. No Clerk, no public registration, and no admin login link/menu on the customer frontend.
+The approved target is **two separate frontend applications in two separate repositories**, sharing one authoritative backend/API and one operational D1 database:
 
-Both frontends will use one shared backend API, one production D1 database, and one private R2 bucket. R2 is a required dependency before customer file upload/private delivery can go live; the bucket is not yet provisioned and activation awaits owner billing approval. The API is a backend service, not a third frontend.
+1. **Customer/Public frontend** — maintained in this repository; customer authentication is Clerk-targeted, subject to the migration and verification gates below.
+2. **Private Admin/Super Admin frontend** — maintained in https://github.com/Sparkmind-obp-off/Admin-overlune; separate Cloudflare Pages deployment and first-party Admin authentication/perimeter. No Clerk customer identity, public Admin registration or Admin login link/menu on the customer frontend.
+
+The current backend/API baseline remains in this Public repository. Admin-overlune must call it over authenticated HTTPS and must not create a second business API, D1 database or operational data store. A dedicated Cloudflare Worker/API extraction is an optional later refactor, only after a tested, backward-compatible migration. Neither frontend may access D1, R2 or provider secrets directly.
+
+Private R2 is a required dependency before customer file upload/private delivery can go live; the bucket is not yet provisioned and activation awaits owner approval.
 
 Proposed future URLs (not yet configured):
 - Customer: `avorlune.com` (current fallback: `avorlune.pages.dev`)
 - Admin: `admin.avorlune.com` (temporary Pages fallback: `avorlune-admin.pages.dev`)
-- API: `api.avorlune.com` (only after the shared Worker API is deployed and verified)
+- API: `api.avorlune.com` (only after the shared API deployment is migrated and verified)
 
 Architecture and implementation documents:
 - `docs/47-two-frontend-authentication-architecture.md`
 - `docs/48-admin-authentication-and-security-spec.md`
 - `docs/49-two-pages-deployments-and-shared-api-runbook.md`
 - `docs/50-customer-auth-migration-and-acceptance-plan.md`
-- `docs/51-cloudflare-r2-production-storage-spec.md` — required private production storage, activation and cost controls
-- `docs/52-duitku-live-production-endpoints-and-operations.md` — official LIVE endpoints, signatures, callback and safe diagnostics
-- `docs/53-external-provider-and-operations-register.md` — required/optional providers and remaining operational capabilities
+- `docs/51-cloudflare-r2-production-storage-spec.md`
+- `docs/52-duitku-live-production-endpoints-and-operations.md`
+- `docs/53-external-provider-and-operations-register.md`
+- `docs/54-unified-public-admin-and-external-capability-contract.md`
 
-**Important:** This is the approved target architecture, not a claim that the two Pages projects, Clerk customer auth, or standalone Worker API have already been implemented. Current production remains the single Pages deployment described below until a tested migration is completed.
+**Important:** This is the approved target architecture, not a claim that both frontend deployments, Clerk customer auth, private R2 or an extracted Worker API have already been implemented. Current production remains the existing deployment described below until a tested migration is completed. Existing Public /admin functionality is a legacy migration surface and must not be removed until Admin-overlune is ready and rollback is verified.
 
 ## Implementation status (verified 2026-11-01)
 
