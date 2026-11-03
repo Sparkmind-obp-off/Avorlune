@@ -258,3 +258,25 @@ External stacks (LLM, agent framework, search/research, coding assistance, chat,
 
 ## External stack and provider requests
 During implementation, external dependencies must be justified and listed in the [External Stack & Provider Requirements Register](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/33-external-stack-and-provider-requirements-register.md). The register identifies the exact software/API, why it is needed, owner setup action, pricing, data exposure, alternatives, fallback and approval gate. No provider is automatically connected or activated.
+
+
+## AI-Powered Creative Production Marketplace (2026-11-03)
+
+The approved product refinement is software-first: customers select a creative service from a curated catalog, configure their brief, place an order, follow AI-powered production, review quality and receive finished assets. AVORLUNE fulfils orders through approved AI software/providers and its own orchestration; it does not assign work to independent freelancers in phase 1. The experience is marketplace-like, while AVORLUNE remains the sole initial seller and customer counterparty.
+
+New specifications:
+- [81 — AI-powered creative marketplace product definition](docs/81-ai-powered-creative-marketplace-product-definition.md)
+- [82 — Positioning and competitive differentiation](docs/82-positioning-and-competitive-differentiation.md)
+- [83 — Catalog and customer experience](docs/83-catalog-and-customer-experience.md)
+- [84 — AI provider orchestration architecture](docs/84-ai-provider-orchestration-architecture.md)
+- [85 — Pricing and unit economics](docs/85-pricing-and-unit-economics.md)
+- [86 — MVP roadmap and release gates](docs/86-mvp-roadmap-and-release-gates.md)
+- [87 — Data, API and technical requirements](docs/87-data-api-and-technical-requirements.md)
+- [88 — Production operations and quality standard](docs/88-production-operations-and-quality.md)
+- [89 — Master system prompt: AI creative marketplace](docs/89-master-system-prompt-ai-creative-marketplace.md)
+
+**Positioning:** "AI-powered creative production, ready to order." The customer buys a completed deliverable—not prompts, AI credits, provider accounts or editing software. The target is competitive pricing for standardized work where automation creates real cost savings; no universal price-saving claim is made without measured evidence.
+
+**Scope boundary:** external AI providers are internal production dependencies, not marketplace sellers. No freelancer bidding, third-party seller onboarding, peer payouts or open provider marketplace in phase 1. Human review remains for rights, quality, risk and exceptions. Provider activation, production spend, payment activation and production release remain subject to their existing verification and approval gates.
+
+These documents specify the product and execution target. They do not claim that the corresponding software features or provider integrations have already been implemented or deployed.
