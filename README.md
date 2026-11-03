@@ -20,27 +20,31 @@ AVORLUNE is an AI-assisted creative production studio for businesses, creators, 
 
 ## Target frontend and authentication architecture
 
-The approved target is **exactly two frontend applications**, in one repository:
-1. **Customer frontend** — Clerk authentication for customers only.
-2. **Admin frontend** — separate Cloudflare Pages deployment with first-party AVORLUNE admin authentication. No Clerk, no public registration, and no admin login link/menu on the customer frontend.
+The approved target is **two separate frontend applications in two separate repositories**, sharing one authoritative backend/API and one operational D1 database:
 
-Both frontends will use one shared backend API, one production D1 database, and one private R2 bucket. R2 is a required dependency before customer file upload/private delivery can go live; the bucket is not yet provisioned and activation awaits owner billing approval. The API is a backend service, not a third frontend.
+1. **Customer/Public frontend** — maintained in this repository; customer authentication is Clerk-targeted, subject to the migration and verification gates below.
+2. **Private Admin/Super Admin frontend** — maintained in https://github.com/Sparkmind-obp-off/Admin-overlune; separate Cloudflare Pages deployment and first-party Admin authentication/perimeter. No Clerk customer identity, public Admin registration or Admin login link/menu on the customer frontend.
+
+The current backend/API baseline remains in this Public repository. Admin-overlune must call it over authenticated HTTPS and must not create a second business API, D1 database or operational data store. A dedicated Cloudflare Worker/API extraction is an optional later refactor, only after a tested, backward-compatible migration. Neither frontend may access D1, R2 or provider secrets directly.
+
+Private R2 is a required dependency before customer file upload/private delivery can go live; the bucket is not yet provisioned and activation awaits owner approval.
 
 Proposed future URLs (not yet configured):
 - Customer: `avorlune.com` (current fallback: `avorlune.pages.dev`)
 - Admin: `admin.avorlune.com` (temporary Pages fallback: `avorlune-admin.pages.dev`)
-- API: `api.avorlune.com` (only after the shared Worker API is deployed and verified)
+- API: `api.avorlune.com` (only after the shared API deployment is migrated and verified)
 
 Architecture and implementation documents:
 - `docs/47-two-frontend-authentication-architecture.md`
 - `docs/48-admin-authentication-and-security-spec.md`
 - `docs/49-two-pages-deployments-and-shared-api-runbook.md`
 - `docs/50-customer-auth-migration-and-acceptance-plan.md`
-- `docs/51-cloudflare-r2-production-storage-spec.md` — required private production storage, activation and cost controls
-- `docs/52-duitku-live-production-endpoints-and-operations.md` — official LIVE endpoints, signatures, callback and safe diagnostics
-- `docs/53-external-provider-and-operations-register.md` — required/optional providers and remaining operational capabilities
+- `docs/51-cloudflare-r2-production-storage-spec.md`
+- `docs/52-duitku-live-production-endpoints-and-operations.md`
+- `docs/53-external-provider-and-operations-register.md`
+- `docs/54-unified-public-admin-and-external-capability-contract.md`
 
-**Important:** This is the approved target architecture, not a claim that the two Pages projects, Clerk customer auth, or standalone Worker API have already been implemented. Current production remains the single Pages deployment described below until a tested migration is completed.
+**Important:** This is the approved target architecture, not a claim that both frontend deployments, Clerk customer auth, private R2 or an extracted Worker API have already been implemented. Current production remains the existing deployment described below until a tested migration is completed. Existing Public /admin functionality is a legacy migration surface and must not be removed until Admin-overlune is ready and rollback is verified.
 
 ## Implementation status (verified 2026-11-01)
 
@@ -201,3 +205,56 @@ Docs 77–79 are specifications/prompts; they do not mean the new marketplace, C
 - Action services with human-in-the-loop and customer authorization; CRM (admin → Pelanggan), catalog admin (admin → Katalog); public synthetic `/demo`.
 - API additions: `GET /api/v1/account/config`, `/account/me*`, `GET /catalog*`, `POST /projects/:ref/actions/:runId/authorize`, admin `/customers*`, `/catalog*`, `/projects/:id/actions*`.
 - Preview uses its own D1 `avorlune-preview`. Remaining approvals: Duitku key, Clerk production, R2, Resend, legal review.
+
+## Admin repository split (owner direction, 2026-11-03)
+
+The Admin/Super Admin frontend now has its own repository:
+- **Public/customer + authoritative backend baseline:** https://github.com/Sparkmind-obp-off/Avorlune
+- **Admin/Super Admin frontend:** https://github.com/Sparkmind-obp-off/Admin-overlune
+
+This owner-directed repository split supersedes the earlier assumption in docs 47–50 that both frontend applications would live in one repository. It does **not** create a second backend or a second operational database. The Admin app must consume the authoritative AVORLUNE API through a versioned contract; it must not access D1/R2 directly or fork customer/order/payment data.
+
+Admin repository specifications:
+- [Admin README and document index](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/README.md)
+- [00 — Product and architecture blueprint](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/00-product-and-architecture-blueprint.md)
+- [02 — Visual design system and screen concepts](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/02-visual-design-system-and-screen-concepts.md)
+- [05 — Authentication, perimeter and security](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/05-authentication-perimeter-and-security.md)
+- [06 — Public/Admin integration contract](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/06-public-admin-integration-contract.md)
+- [08 — Separate payment domains](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/08-separate-payment-domains.md)
+- [14 — Decision register](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/14-decision-register-and-open-questions.md)
+
+The existing Admin security preference remains: no public admin registration and no customer Clerk-to-admin privilege inheritance. A verified private perimeter must protect both the Admin UI and every privileged API endpoint. Customer order payments remain separate from any future Admin/platform billing domain.
+
+These documents are the agreed design baseline only. Admin frontend implementation, separate deployment, API contract changes, custom-domain configuration, and payment-domain activation remain pending their respective audits and approvals.
+
+## Agentic Super Admin direction (2026-11-03)
+
+The separate Admin repository is being specified as AVORLUNE's private **Agentic Super Admin Control Plane**. Its AI agent is the operational controller for approved platform and brand scopes, using a server-side orchestrator, policy engine, typed tools, durable tasks, evidence and human approval gates.
+
+- Admin repository: https://github.com/Sparkmind-obp-off/Admin-overlune
+- [Agentic Super Admin charter](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/15-agentic-super-admin-product-charter.md)
+- [Agent runtime and orchestration](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/16-agent-runtime-and-orchestration-architecture.md)
+- [Brand portfolio and isolation](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/18-brand-portfolio-and-tenant-isolation.md)
+- [UX and screen specifications](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/20-agentic-admin-information-architecture.md)
+- [Full-stack technology architecture](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/23-full-stack-technology-and-deployment-architecture.md)
+- [Security and data governance](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/24-agent-security-threat-model-and-data-governance.md)
+
+Owner clarification: there is no Admin/platform payment, subscription or billing domain. Customer order payment remains the only payment domain in the AVORLUNE product. These are design specifications, not proof of Admin or agent implementation.
+
+### Provider profiles and video generation architecture
+The Admin repository now specifies external provider profiles, optional video generation and the shared Public ↔ Admin capability control plane:
+- [External provider profiles](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/28-external-provider-profiles-and-connection-governance.md)
+- [Video generation pipeline](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/29-public-video-generation-and-production-pipeline.md)
+- [Public ↔ Admin control contract](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/30-public-admin-control-plane-and-shared-capability-contract.md)
+
+Video is an optional capability. Public submits customer jobs to the authoritative backend; the backend orchestrates approved providers; Admin/AI Agent configures and monitors capabilities under policy and human approval. No provider is connected or paid generation enabled merely by this design.
+
+
+## Unified Public ↔ Admin architecture (owner direction)
+The separate Admin/Super Admin frontend is maintained in [Admin-overlune](https://github.com/Sparkmind-obp-off/Admin-overlune). Public and Admin are separate frontends that share one authoritative backend/API and operational data source; the current backend baseline remains in this repository until a deliberate, tested extraction. Admin must not create a second database or business API. Read [the unified integration contract](docs/54-unified-public-admin-and-external-capability-contract.md), [the Admin architecture decision](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/31-unified-architecture-decision-and-lean-external-stack-policy.md), and [the unified implementation master prompt](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/32-unified-implementation-master-system-prompt.md).
+
+External stacks (LLM, agent framework, search/research, coding assistance, chat, media generation, analytics and observability) are optional provider adapters. Add only when a concrete capability gap and verified business case exist. Video remains optional and provider activation/paid usage requires owner approval. These are architecture decisions, not claims that new runtime features or connections are already implemented.
+
+
+## External stack and provider requests
+During implementation, external dependencies must be justified and listed in the [External Stack & Provider Requirements Register](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/33-external-stack-and-provider-requirements-register.md). The register identifies the exact software/API, why it is needed, owner setup action, pricing, data exposure, alternatives, fallback and approval gate. No provider is automatically connected or activated.
