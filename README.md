@@ -193,3 +193,25 @@ New approved concept and execution prompt:
 **Marketplace boundary:** phase 1 is a curated single-provider storefront. Catalog items, offers, offer versions, quotes, orders/projects, action runs, service logs and deliverables are separate concepts. No third-party seller/freelancer marketplace or customer-facing AI tool/credit resale.
 
 Docs 77–79 are specifications/prompts; they do not mean the new marketplace, Clerk, catalog, action engine or CRM has been implemented or deployed. Follow docs/78 to audit and close the remaining gaps based on actual code and evidence.
+
+
+## Admin repository split (owner direction, 2026-11-03)
+
+The Admin/Super Admin frontend now has its own repository:
+- **Public/customer + authoritative backend baseline:** https://github.com/Sparkmind-obp-off/Avorlune
+- **Admin/Super Admin frontend:** https://github.com/Sparkmind-obp-off/Admin-overlune
+
+This owner-directed repository split supersedes the earlier assumption in docs 47–50 that both frontend applications would live in one repository. It does **not** create a second backend or a second operational database. The Admin app must consume the authoritative AVORLUNE API through a versioned contract; it must not access D1/R2 directly or fork customer/order/payment data.
+
+Admin repository specifications:
+- [Admin README and document index](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/README.md)
+- [00 — Product and architecture blueprint](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/00-product-and-architecture-blueprint.md)
+- [02 — Visual design system and screen concepts](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/02-visual-design-system-and-screen-concepts.md)
+- [05 — Authentication, perimeter and security](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/05-authentication-perimeter-and-security.md)
+- [06 — Public/Admin integration contract](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/06-public-admin-integration-contract.md)
+- [08 — Separate payment domains](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/08-separate-payment-domains.md)
+- [14 — Decision register](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/14-decision-register-and-open-questions.md)
+
+The existing Admin security preference remains: no public admin registration and no customer Clerk-to-admin privilege inheritance. A verified private perimeter must protect both the Admin UI and every privileged API endpoint. Customer order payments remain separate from any future Admin/platform billing domain.
+
+These documents are the agreed design baseline only. Admin frontend implementation, separate deployment, API contract changes, custom-domain configuration, and payment-domain activation remain pending their respective audits and approvals.
