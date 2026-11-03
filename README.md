@@ -229,3 +229,11 @@ The separate Admin repository is being specified as AVORLUNE's private **Agentic
 - [Security and data governance](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/24-agent-security-threat-model-and-data-governance.md)
 
 Owner clarification: there is no Admin/platform payment, subscription or billing domain. Customer order payment remains the only payment domain in the AVORLUNE product. These are design specifications, not proof of Admin or agent implementation.
+
+### Provider profiles and video generation architecture
+The Admin repository now specifies external provider profiles, optional video generation and the shared Public ↔ Admin capability control plane:
+- [External provider profiles](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/28-external-provider-profiles-and-connection-governance.md)
+- [Video generation pipeline](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/29-public-video-generation-and-production-pipeline.md)
+- [Public ↔ Admin control contract](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/30-public-admin-control-plane-and-shared-capability-contract.md)
+
+Video is an optional capability. Public submits customer jobs to the authoritative backend; the backend orchestrates approved providers; Admin/AI Agent configures and monitors capabilities under policy and human approval. No provider is connected or paid generation enabled merely by this design.
