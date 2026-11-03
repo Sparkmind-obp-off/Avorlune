@@ -215,3 +215,17 @@ Admin repository specifications:
 The existing Admin security preference remains: no public admin registration and no customer Clerk-to-admin privilege inheritance. A verified private perimeter must protect both the Admin UI and every privileged API endpoint. Customer order payments remain separate from any future Admin/platform billing domain.
 
 These documents are the agreed design baseline only. Admin frontend implementation, separate deployment, API contract changes, custom-domain configuration, and payment-domain activation remain pending their respective audits and approvals.
+
+## Agentic Super Admin direction (2026-11-03)
+
+The separate Admin repository is being specified as AVORLUNE's private **Agentic Super Admin Control Plane**. Its AI agent is the operational controller for approved platform and brand scopes, using a server-side orchestrator, policy engine, typed tools, durable tasks, evidence and human approval gates.
+
+- Admin repository: https://github.com/Sparkmind-obp-off/Admin-overlune
+- [Agentic Super Admin charter](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/15-agentic-super-admin-product-charter.md)
+- [Agent runtime and orchestration](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/16-agent-runtime-and-orchestration-architecture.md)
+- [Brand portfolio and isolation](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/18-brand-portfolio-and-tenant-isolation.md)
+- [UX and screen specifications](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/20-agentic-admin-information-architecture.md)
+- [Full-stack technology architecture](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/23-full-stack-technology-and-deployment-architecture.md)
+- [Security and data governance](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/24-agent-security-threat-model-and-data-governance.md)
+
+Owner clarification: there is no Admin/platform payment, subscription or billing domain. Customer order payment remains the only payment domain in the AVORLUNE product. These are design specifications, not proof of Admin or agent implementation.
