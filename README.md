@@ -237,3 +237,9 @@ The Admin repository now specifies external provider profiles, optional video ge
 - [Public ↔ Admin control contract](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/30-public-admin-control-plane-and-shared-capability-contract.md)
 
 Video is an optional capability. Public submits customer jobs to the authoritative backend; the backend orchestrates approved providers; Admin/AI Agent configures and monitors capabilities under policy and human approval. No provider is connected or paid generation enabled merely by this design.
+
+
+## Unified Public ↔ Admin architecture (owner direction)
+The separate Admin/Super Admin frontend is maintained in [Admin-overlune](https://github.com/Sparkmind-obp-off/Admin-overlune). Public and Admin are separate frontends that share one authoritative backend/API and operational data source; the current backend baseline remains in this repository until a deliberate, tested extraction. Admin must not create a second database or business API. Read [the unified integration contract](docs/54-unified-public-admin-and-external-capability-contract.md), [the Admin architecture decision](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/31-unified-architecture-decision-and-lean-external-stack-policy.md), and [the unified implementation master prompt](https://github.com/Sparkmind-obp-off/Admin-overlune/blob/main/docs/32-unified-implementation-master-system-prompt.md).
+
+External stacks (LLM, agent framework, search/research, coding assistance, chat, media generation, analytics and observability) are optional provider adapters. Add only when a concrete capability gap and verified business case exist. Video remains optional and provider activation/paid usage requires owner approval. These are architecture decisions, not claims that new runtime features or connections are already implemented.
