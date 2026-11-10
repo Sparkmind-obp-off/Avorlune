@@ -280,3 +280,12 @@ New specifications:
 **Scope boundary:** external AI providers are internal production dependencies, not marketplace sellers. No freelancer bidding, third-party seller onboarding, peer payouts or open provider marketplace in phase 1. Human review remains for rights, quality, risk and exceptions. Provider activation, production spend, payment activation and production release remain subject to their existing verification and approval gates.
 
 These documents specify the product and execution target. They do not claim that the corresponding software features or provider integrations have already been implemented or deployed.
+
+
+## Business architecture v2 (2026-11-11)
+
+The current brand and operating model is documented in [90 — AVORLUNE Business Architecture v2](docs/90-avorlune-business-architecture-v2.md).
+
+**Direction:** AVORLUNE remains the parent brand and customer-facing business. OLTAVYN remains a separate internal technology engine/repository. Affiliate OS is a proposed internal AVORLUNE workspace; Content Factory is shared production capability; Affiliate Media and Creative Production remain distinct business activities and acquisition funnels.
+
+This is an architecture document only. It does not authorize OLTAVYN changes, merging its draft PR, a new subdomain, production migrations/deployments, paid services, account integrations or automatic publishing.
